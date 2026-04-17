@@ -33,6 +33,7 @@ Both modes are auto-detected from the extracted tar contents.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import shutil
@@ -45,6 +46,7 @@ import httpx
 from app.config import get_settings
 from app.models import ArtifactKey, DownloadStatus
 from app.services.github_client import GitHubClient
+from app.utils import human_size
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +64,10 @@ _DIRECT_MARKERS = {"kernel", "initrd.img"}
 # {cache_dir_name: {"status": ..., "progress": 0-100, "error": ..., "boot_mode": ...}}
 _progress: dict[str, dict] = {}
 
-# Semaphore to cap concurrent downloads (initialised lazily)
+# Semaphore to cap concurrent downloads (initialised at startup via init_semaphore())
 _sem: Optional[asyncio.Semaphore] = None
+# Per-key locks to prevent duplicate concurrent downloads
+_download_locks: dict[str, asyncio.Lock] = {}
 
 # ── iPXE bootstrap binaries ───────────────────────────────────────────────────
 IPXE_BINARY_URLS = {
@@ -75,11 +79,16 @@ IPXE_BINARY_URLS = {
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
 
+def init_semaphore(max_concurrent: int) -> None:
+    """Initialise the download semaphore. Call once at application startup."""
+    global _sem
+    _sem = asyncio.Semaphore(max_concurrent)
+
+
 def _get_sem() -> asyncio.Semaphore:
     global _sem
     if _sem is None:
-        cfg = get_settings()
-        _sem = asyncio.Semaphore(cfg.max_concurrent_downloads)
+        _sem = asyncio.Semaphore(get_settings().max_concurrent_downloads)
     return _sem
 
 
@@ -155,35 +164,86 @@ async def ensure_ipxe_binaries() -> None:
 async def download_artifacts(key: ArtifactKey) -> None:
     """
     Background task: download and extract installer-net.tar for *key*.
-    Concurrent calls for the same key are de-duplicated.
+    Concurrent calls for the same key are de-duplicated via a per-key lock.
     """
     cache_key = key.cache_dir_name()
-    existing = _progress.get(cache_key, {})
-    if existing.get("status") in (
-        DownloadStatus.downloading.value,
-        DownloadStatus.extracting.value,
-        DownloadStatus.ready.value,
-    ):
-        return
 
-    _progress[cache_key] = {
-        "status": DownloadStatus.downloading.value,
-        "progress": 0,
-        "error": None,
-        "boot_mode": None,
-    }
+    if cache_key not in _download_locks:
+        _download_locks[cache_key] = asyncio.Lock()
 
-    async with _get_sem():
-        try:
-            await _do_download(key, cache_key)
-        except Exception as exc:
-            logger.exception("Download failed for %s: %s", cache_key, exc)
-            _progress[cache_key] = {
-                "status": DownloadStatus.failed.value,
-                "progress": None,
-                "error": str(exc),
-                "boot_mode": None,
-            }
+    lock = _download_locks[cache_key]
+    if lock.locked():
+        async with lock:
+            return
+
+    async with lock:
+        existing = _progress.get(cache_key, {})
+        if existing.get("status") == DownloadStatus.ready.value:
+            return
+
+        _progress[cache_key] = {
+            "status": DownloadStatus.downloading.value,
+            "progress": 0,
+            "error": None,
+            "boot_mode": None,
+        }
+
+        async with _get_sem():
+            try:
+                await _do_download(key, cache_key)
+            except Exception as exc:
+                logger.exception("Download failed for %s: %s", cache_key, exc)
+                _progress[cache_key] = {
+                    "status": DownloadStatus.failed.value,
+                    "progress": None,
+                    "error": str(exc),
+                    "boot_mode": None,
+                }
+
+
+async def _fetch_checksum_file(url: str, cfg) -> str:
+    """Download and return the content of the sha256sums file."""
+    headers: dict[str, str] = {}
+    if cfg.github_token:
+        headers["Authorization"] = f"Bearer {cfg.github_token}"
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
+
+
+async def _verify_checksum(tar_path: Path, asset_name: str, checksum_url: str, cfg) -> None:
+    """Verify the downloaded file's SHA-256 hash against the published checksum."""
+    try:
+        checksum_text = await _fetch_checksum_file(checksum_url, cfg)
+        expected_hash = None
+        for line in checksum_text.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[1].lstrip("*") == asset_name:
+                expected_hash = parts[0].lower()
+                break
+        if expected_hash is None:
+            logger.warning("No checksum entry found for %s — skipping verification", asset_name)
+            return
+        actual_hash = await asyncio.to_thread(_sha256_file, tar_path)
+        if actual_hash != expected_hash:
+            raise RuntimeError(
+                f"SHA-256 mismatch for {asset_name}: "
+                f"expected {expected_hash}, got {actual_hash}"
+            )
+        logger.info("SHA-256 verified for %s", asset_name)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.warning("Checksum verification skipped (%s): %s", asset_name, exc)
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 async def _do_download(key: ArtifactKey, cache_key: str) -> None:
@@ -216,10 +276,14 @@ async def _do_download(key: ArtifactKey, cache_key: str) -> None:
                 f"Available: {available}"
             )
 
-        logger.info("Downloading %s (%s)", asset.name, _human_size(asset.size))
+        logger.info("Downloading %s (%s)", asset.name, human_size(asset.size))
         tar_path = dest_dir / asset.name
+        checksum_asset = gh.find_checksum_asset(release)
         await _stream_download(asset.browser_download_url, tar_path, asset.size,
                                cache_key, cfg)
+        if checksum_asset is not None:
+            await _verify_checksum(tar_path, asset.name,
+                                   checksum_asset.browser_download_url, cfg)
 
     _progress[cache_key] = {
         "status": DownloadStatus.extracting.value,
@@ -316,8 +380,8 @@ def _extract_tar(tar_path: Path, dest_dir: Path) -> None:
             elif member.isfile():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with tf.extractfile(member) as src, target.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                logger.debug("Extracted: %s (%s)", member.name, _human_size(member.size))
+                    shutil.copyfileobj(src, dst, length=1 << 20)
+                logger.debug("Extracted: %s (%s)", member.name, human_size(member.size))
 
     logger.info("Extraction complete for %s", tar_path.name)
 
@@ -344,7 +408,12 @@ def patch_grub_cfg(dest_dir: Path, grub_vars: dict[str, str]) -> None:
         logger.warning("grub.cfg not found at %s — skipping patch", grub_cfg_path)
         return
 
-    original_content = grub_cfg_path.read_text(encoding="utf-8", errors="replace")
+    # Always patch against the original to prevent accumulation on repeated calls
+    orig_backup = grub_cfg_path.with_suffix(".cfg.orig")
+    source = orig_backup if orig_backup.exists() else grub_cfg_path
+    original_content = source.read_text(encoding="utf-8", errors="replace")
+    if not orig_backup.exists():
+        orig_backup.write_text(original_content, encoding="utf-8")
 
     # Build the prefix block
     lines = [
@@ -361,11 +430,6 @@ def patch_grub_cfg(dest_dir: Path, grub_vars: dict[str, str]) -> None:
     lines += ["", "# ── Original EVE installer GRUB configuration ───────────────────────────", ""]
     prefix = "\n".join(lines) + "\n"
 
-    # Write the patched version (keep the original backed up)
-    orig_backup = grub_cfg_path.with_suffix(".cfg.orig")
-    if not orig_backup.exists():
-        orig_backup.write_text(original_content, encoding="utf-8")
-
     grub_cfg_path.write_text(prefix + original_content, encoding="utf-8")
     logger.info("Patched EFI/BOOT/grub.cfg with %d variable overrides", len(grub_vars))
 
@@ -374,6 +438,11 @@ def patch_grub_cfg(dest_dir: Path, grub_vars: dict[str, str]) -> None:
 
 async def list_cached_artifacts() -> list[dict]:
     """Return a list of all artifact sets that have been (fully or partially) downloaded."""
+    return await asyncio.to_thread(_list_cached_artifacts_sync)
+
+
+def _list_cached_artifacts_sync() -> list[dict]:
+    """Synchronous implementation — called from asyncio.to_thread."""
     cfg = get_settings()
     result = []
     root = cfg.artifacts_dir
@@ -397,11 +466,3 @@ async def list_cached_artifacts() -> list[dict]:
                 "size_bytes": sum(f.stat().st_size for f in files),
             })
     return result
-
-
-def _human_size(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"

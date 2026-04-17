@@ -75,8 +75,11 @@ def is_running() -> bool:
 
 
 def write_boot_script(content: str, filename: str = "boot.ipxe") -> None:
-    """Write an iPXE script to the TFTP root so nodes can TFTP-fetch it."""
+    """Write an iPXE script to the TFTP root atomically so a booting node
+    never reads a partially-written file."""
     cfg = get_settings()
     dest = cfg.tftp_root / filename
-    dest.write_text(content, encoding="utf-8")
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(dest)  # atomic on POSIX
     logger.info("Wrote iPXE script to TFTP root: %s", dest)

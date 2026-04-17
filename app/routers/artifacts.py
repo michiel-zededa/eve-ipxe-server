@@ -71,9 +71,13 @@ async def trigger_download(
             BootConfig.variant == variant,
         )
     )
-    for cfg in result.scalars().all():
-        cfg.download_status = DownloadStatus.downloading.value
-        cfg.download_error = None
+    # Only update DB status if not currently downloading
+    in_progress_statuses = (DownloadStatus.downloading.value, DownloadStatus.extracting.value)
+    current_progress = artifact_manager.get_progress(key.cache_dir_name())
+    if current_progress["status"] not in in_progress_statuses:
+        for cfg in result.scalars().all():
+            cfg.download_status = DownloadStatus.downloading.value
+            cfg.download_error = None
 
     background_tasks.add_task(
         _download_and_update_db,
@@ -169,9 +173,9 @@ async def stream_download_progress(
     cache_key = key.cache_dir_name()
 
     async def generate():
-        while True:
+        deadline = asyncio.get_event_loop().time() + 7200  # 2-hour max
+        while asyncio.get_event_loop().time() < deadline:
             progress = artifact_manager.get_progress(cache_key)
-            # Also check disk if not in memory
             if progress["status"] == "unknown" and artifact_manager.is_ready(key):
                 progress = {
                     "status": "ready",
@@ -184,9 +188,12 @@ async def stream_download_progress(
             status = progress.get("status", "unknown")
             if status in (DownloadStatus.ready.value, DownloadStatus.failed.value):
                 yield {"event": "done", "data": json.dumps(progress)}
-                break
+                return
 
             await asyncio.sleep(1)
+
+        timeout_data = {"status": "failed", "error": "Download timed out after 2 hours"}
+        yield {"event": "done", "data": json.dumps(timeout_data)}
 
     return EventSourceResponse(generate())
 
@@ -216,6 +223,14 @@ async def delete_artifacts(
 
     if not dest.exists():
         raise HTTPException(status_code=404, detail="No cached artifacts found for this combination")
+
+    # Refuse to delete while a download is in progress
+    progress = artifact_manager.get_progress(key.cache_dir_name())
+    if progress["status"] in (DownloadStatus.downloading.value, DownloadStatus.extracting.value):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete artifacts while a download is in progress",
+        )
 
     try:
         shutil.rmtree(dest)

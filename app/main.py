@@ -51,15 +51,25 @@ async def lifespan(app: FastAPI):
     # 2. Initialise database
     await init_db()
     logger.info("Database initialised")
+    artifact_manager.init_semaphore(cfg.max_concurrent_downloads)
+    logger.info("Download semaphore initialised (max=%d)", cfg.max_concurrent_downloads)
 
     # 3. Download iPXE binaries (runs in background, non-blocking)
-    asyncio.create_task(_bootstrap_ipxe_binaries())
+    _bootstrap_task = asyncio.create_task(_bootstrap_ipxe_binaries())
+    _bootstrap_task.add_done_callback(
+        lambda t: logger.error("iPXE bootstrap task raised: %s", t.exception())
+        if not t.cancelled() and t.exception() else None
+    )
 
     # 4. Start TFTP server
     tftp_server.start()
 
     # 5. Regenerate active boot script from previous session
-    asyncio.create_task(_restore_active_script())
+    _restore_task = asyncio.create_task(_restore_active_script())
+    _restore_task.add_done_callback(
+        lambda t: logger.error("Script restore task raised: %s", t.exception())
+        if not t.cancelled() and t.exception() else None
+    )
 
     yield  # application runs here
 
@@ -126,6 +136,7 @@ app.include_router(ipxe.router)
 
 # ── Static files (web UI) ──────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
+_static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
@@ -133,7 +144,11 @@ app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 @app.get("/health", include_in_schema=False)
 async def health():
-    return {"status": "ok", "tftp": tftp_server.is_running()}
+    tftp_ok = tftp_server.is_running()
+    payload = {"status": "ok" if tftp_ok else "degraded", "tftp": tftp_ok}
+    if not tftp_ok:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 @app.get("/", include_in_schema=False)

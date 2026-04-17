@@ -17,7 +17,6 @@ echo
 menu EVE-OS Boot Configurations
 {% for cfg in configs %}
 item config-{{ cfg.id }} [{{ cfg.eve_version }}/{{ cfg.architecture }}/{{ cfg.hv_mode }}] {{ cfg.name }}{% if cfg.is_active %} (ACTIVE){% endif %}
-
 {% endfor %}
 item --gap
 item shell     Drop to iPXE shell

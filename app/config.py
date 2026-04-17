@@ -52,9 +52,6 @@ class Settings(BaseSettings):
                 ["ip", "-4", "route", "get", "1.1.1.1"],
                 capture_output=True, text=True, timeout=2,
             )
-            for part in result.stdout.split():
-                # Output looks like: … src <IP> …
-                pass
             tokens = result.stdout.split()
             if "src" in tokens:
                 return tokens[tokens.index("src") + 1]

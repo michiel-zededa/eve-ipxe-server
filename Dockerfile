@@ -26,6 +26,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # ── Application source ─────────────────────────────────────────────────────────
 COPY app/ ./app/
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # ── Runtime directories (overridden by volume mounts in compose) ───────────────
 RUN mkdir -p /data/artifacts /data/config /data/tftp \
@@ -42,8 +44,4 @@ EXPOSE 8080 6969/udp
 # Uvicorn with a single worker is correct here: the TFTP server thread and
 # in-memory download-progress state must be co-located in one process.
 # Shell form so ${LOG_LEVEL} env var expansion works at runtime.
-CMD python -m uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port 8080 \
-    --log-level ${LOG_LEVEL:-info} \
-    --no-access-log
+ENTRYPOINT ["/entrypoint.sh"]

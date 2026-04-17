@@ -174,12 +174,9 @@ class GitHubClient:
                 return asset
         return None
 
-    def find_checksum_asset(
-        self, release: Release, arch: str, hv: str, variant: str = "generic"
-    ) -> Optional[ReleaseAsset]:
-        """Find the sha256sums file for the given artifact set."""
-        target = f"{arch}.{hv}.{variant}.sha256sums"
+    def find_checksum_asset(self, release: Release) -> Optional[ReleaseAsset]:
+        """Find the sha256sums asset for a release, if present."""
         for asset in release.assets:
-            if asset.name == target:
+            if asset.name == "sha256sums":
                 return asset
         return None

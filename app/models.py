@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -63,8 +63,8 @@ class BootConfig(Base):
     id              = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name            = Column(String(128), nullable=False, default="Default Config")
     is_active       = Column(Boolean, nullable=False, default=False)
-    created_at      = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at      = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at      = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at      = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # EVE version selection
     eve_version     = Column(String(32), nullable=False)
@@ -95,29 +95,6 @@ class BootConfig(Base):
     download_status = Column(String(16), nullable=False, default=DownloadStatus.pending.value)
     download_error  = Column(Text, nullable=True)
     download_progress = Column(Integer, nullable=True)  # 0-100
-
-
-class ArtifactCache(Base):
-    """Tracks downloaded and extracted EVE artifact sets."""
-    __tablename__ = "artifact_cache"
-
-    id              = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    eve_version     = Column(String(32), nullable=False)
-    architecture    = Column(String(8), nullable=False)
-    hv_mode         = Column(String(8), nullable=False)
-    variant         = Column(String(16), nullable=False)
-    status          = Column(String(16), nullable=False, default=DownloadStatus.pending.value)
-    error           = Column(Text, nullable=True)
-    progress        = Column(Integer, nullable=True)   # 0-100
-    # GitHub asset name that was downloaded
-    source_asset    = Column(String(256), nullable=True)
-    # Bytes downloaded / total bytes
-    bytes_downloaded = Column(Integer, nullable=True)
-    bytes_total     = Column(Integer, nullable=True)
-    created_at      = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at      = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    # Paths of extracted artifacts (stored as JSON list)
-    artifacts       = Column(JSON, nullable=True)
 
 
 # ── Pydantic Schemas ───────────────────────────────────────────────────────────
@@ -207,6 +184,17 @@ class BootConfigCreate(BaseModel):
             raise ValueError("Controller URL must start with https:// or http://")
         return v
 
+    @field_validator("extra_cmdline")
+    @classmethod
+    def validate_extra_cmdline(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v.strip() == "":
+            return None
+        v = v.strip()
+        # Reject newlines and null bytes which could break kernel cmdline parsing
+        if any(c in v for c in ("\n", "\r", "\x00")):
+            raise ValueError("extra_cmdline must not contain newlines or null bytes")
+        return v
+
     @model_validator(mode="after")
     def validate_hv_arch_combo(self) -> "BootConfigCreate":
         # amd64.k.generic is the only non-KVM combo that has installer-net
@@ -233,6 +221,34 @@ class BootConfigResponse(BaseModel):
     persist_disk: Optional[str]
     controller_url: Optional[str]
     onboarding_key: Optional[str]
+    soft_serial: Optional[str]
+    reboot_after_install: bool
+    nuke_disk: bool
+    pause_before_install: bool
+    console: str
+    extra_cmdline: Optional[str]
+    download_status: str
+    download_error: Optional[str]
+    download_progress: Optional[int]
+
+    model_config = {"from_attributes": True}
+
+
+class BootConfigListResponse(BaseModel):
+    """Like BootConfigResponse but omits sensitive fields for list endpoints."""
+    id: str
+    name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    eve_version: str
+    architecture: str
+    hv_mode: str
+    variant: str
+    scenario: str
+    install_disk: str
+    persist_disk: Optional[str]
+    controller_url: Optional[str]
     soft_serial: Optional[str]
     reboot_after_install: bool
     nuke_disk: bool

@@ -10,6 +10,7 @@ plain text rather than JSON.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -38,7 +39,7 @@ async def serve_default_boot_script(db: AsyncSession = Depends(get_db)):
     tftp_boot_ipxe = cfg.tftp_root / "boot.ipxe"
 
     if tftp_boot_ipxe.exists():
-        return tftp_boot_ipxe.read_text()
+        return await asyncio.to_thread(tftp_boot_ipxe.read_text)
 
     # Fall back: generate a menu from all ready configs
     result = await db.execute(

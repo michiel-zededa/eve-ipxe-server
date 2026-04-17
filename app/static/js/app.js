@@ -13,6 +13,7 @@ const state = {
   selectedScenario: 'baremetal',
   selectedVariant:  'generic',
   currentStep:      1,
+  wizardInProgress: false,
   activeConfigId:   null,
   serverInfo:       null,
   downloadEventSource: null,
@@ -24,6 +25,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadServerInfo();
   await loadReleases();
   await loadConfigCount();
+
+  window.addEventListener('beforeunload', () => {
+    if (state.downloadEventSource) state.downloadEventSource.close();
+  });
 });
 
 // ── Server info ──────────────────────────────────────────────────────────────
@@ -51,11 +56,19 @@ async function loadServerInfo() {
     }
   } catch (e) {
     console.warn('Could not load server info:', e);
+    const el = document.getElementById('server-host-display');
+    if (el) el.textContent = 'Unavailable';
   }
 }
 
 // ── View switching ───────────────────────────────────────────────────────────
 function showView(name) {
+  // Close any open SSE stream when navigating away
+  if (state.downloadEventSource) {
+    state.downloadEventSource.close();
+    state.downloadEventSource = null;
+  }
+
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
 
@@ -65,16 +78,37 @@ function showView(name) {
   const navItem = document.querySelector(`[data-view="${name}"]`);
   if (navItem) navItem.classList.add('active');
 
+  if (name === 'wizard' && !state.wizardInProgress) {
+    state.currentConfigDbId = null;
+  }
+
   if (name === 'configs')      loadConfigs();
   if (name === 'artifacts')    loadArtifacts();
 }
 
 // ── Wizard step navigation ───────────────────────────────────────────────────
-function goToStep(n) {
-  if (n === 2 && !state.selectedVersion) {
-    toast('Please select an EVE-OS version first.', 'error');
-    return;
+function validateStep(to) {
+  if (to === 2) {
+    if (!state.selectedVersion) {
+      toast('Please select an EVE-OS version first.', 'error');
+      return false;
+    }
   }
+  if (to === 4) {
+    const disk = (document.getElementById('install-disk')?.value || '').trim();
+    if (!disk.startsWith('/dev/')) {
+      toast('Install disk must start with /dev/ (e.g. /dev/sda)', 'error');
+      document.getElementById('install-disk')?.focus();
+      return false;
+    }
+  }
+  return true;
+}
+
+function goToStep(n) {
+  const current = state.currentStep || 1;
+  if (n > current && !validateStep(n)) return;
+
   if (n === 4) renderReview();
 
   state.currentStep = n;
@@ -92,6 +126,15 @@ function goToStep(n) {
     if (step < n)       s.classList.add('completed');
     else if (step === n) s.classList.add('active');
     else                s.classList.add('disabled');
+  });
+
+  // Move focus to the new step heading for keyboard/screen-reader navigation
+  requestAnimationFrame(() => {
+    const heading = document.querySelector(`#step-${n} h2, #step-${n} [class*="step-title"], #step-${n} [class*="heading"]`);
+    if (heading) {
+      if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+      heading.focus({ preventScroll: false });
+    }
   });
 }
 
@@ -275,6 +318,8 @@ async function createAndDownload() {
     toast('Install disk must start with /dev/', 'error'); return;
   }
 
+  state.wizardInProgress = true;
+
   const btn = document.getElementById('create-btn');
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Creating…';
@@ -299,8 +344,10 @@ async function createAndDownload() {
 
     // 3. Stream progress
     await streamDownloadProgress(params, cfg.id);
+    state.wizardInProgress = false;
 
   } catch (err) {
+    state.wizardInProgress = false;
     toast('Error: ' + err.message, 'error');
     btn.disabled = false;
     btn.innerHTML = '⬇ Download Artifacts &amp; Activate';
@@ -378,46 +425,77 @@ function updateDownloadUI(data) {
     document.getElementById('download-bytes').textContent =
       `${humanSize(data.bytes_downloaded)} / ${humanSize(data.bytes_total)}`;
   }
+
+  if (status === 'ready') {
+    document.getElementById('download-fill')?.classList.add('complete');
+  }
 }
 
 async function pollUntilReady(params, configId, resolve, reject) {
   let attempts = 0;
-  const maxAttempts = 600;  // 10 minutes at 1s intervals
-  const poll = async () => {
+  let consecutiveErrors = 0;
+  const maxAttempts = 600;
+
+  const poll = setInterval(async () => {
     attempts++;
     try {
       const data = await api(`/api/artifacts/status/${encodeURIComponent(params.eve_version)}/${params.architecture}/${params.hv_mode}/${params.variant}`);
+      consecutiveErrors = 0;
       updateDownloadUI(data);
+
       if (data.status === 'ready') {
-        await api(`/api/configs/${configId}/activate`, 'POST');
-        await loadScriptPreview(configId);
-        toast('Configuration activated!', 'success');
-        document.getElementById('create-btn').style.display  = 'none';
-        document.getElementById('dl-script-btn').style.display = '';
-        document.getElementById('boot-btn').style.display    = '';
-        await loadConfigCount();
-        resolve();
-        return;
+        clearInterval(poll);
+        try {
+          await api(`/api/configs/${configId}/activate`, 'POST');
+          await loadScriptPreview(configId);
+          toast('Configuration activated!', 'success');
+          document.getElementById('create-btn').style.display = 'none';
+          document.getElementById('dl-script-btn').style.display = '';
+          document.getElementById('boot-btn').style.display = '';
+          await loadConfigCount();
+          state.wizardInProgress = false;
+          resolve();
+        } catch (err) {
+          clearInterval(poll);
+          state.wizardInProgress = false;
+          reject(err);
+        }
+      } else if (data.status === 'failed' || attempts >= maxAttempts) {
+        clearInterval(poll);
+        state.wizardInProgress = false;
+        const msg = data.error || (attempts >= maxAttempts ? 'Timed out waiting for download' : 'Download failed');
+        toast('Download failed: ' + msg, 'error');
+        document.getElementById('create-btn').disabled = false;
+        document.getElementById('create-btn').innerHTML = '⬇ Retry Download';
+        reject(new Error(msg));
       }
-      if (data.status === 'failed') {
-        reject(new Error(data.error || 'Download failed'));
-        return;
+    } catch (e) {
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        clearInterval(poll);
+        state.wizardInProgress = false;
+        toast('Lost contact with server.', 'error');
+        reject(new Error('Server unreachable'));
       }
-    } catch (e) { /* continue polling */ }
-    if (attempts < maxAttempts) setTimeout(poll, 1000);
-    else reject(new Error('Timed out waiting for download'));
-  };
-  setTimeout(poll, 2000);
+    }
+  }, 1000);
 }
 
 async function loadScriptPreview(configId) {
   try {
-    const { script } = await api(`/api/configs/${configId}/script`);
+    const data = await api(`/api/configs/${configId}/script`);
+    const script = data.script;
     document.getElementById('script-preview-section').style.display = 'block';
     document.getElementById('script-preview-content').textContent = script;
     if (state.serverInfo) {
       document.getElementById('script-url-label').textContent =
         `http://${state.serverInfo.server_host}:${state.serverInfo.webui_port}/ipxe/boot.ipxe`;
+    }
+    const badge = document.getElementById('boot-mode-badge');
+    if (badge && data.script) {
+      badge.textContent = data.script.includes('chain --replace') || data.script.includes('chain ${url}')
+        ? 'UEFI grub-chain (v12+)'
+        : 'Direct kernel (pre-v12)';
     }
   } catch (e) {
     console.warn('Could not load script preview:', e);
@@ -430,7 +508,9 @@ function downloadScript() {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'boot.ipxe';
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
 }
 
 function copyScript() {
@@ -463,39 +543,82 @@ async function loadConfigCount() {
 
 function renderConfigs(configs) {
   const list = document.getElementById('configs-list');
-  if (!configs.length) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📋</div>
-        <h3>No configurations yet</h3>
-        <p>Create your first EVE-OS boot configuration using the wizard.</p>
-      </div>`;
+  if (!configs || configs.length === 0) {
+    list.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:2rem;">No saved configurations yet.</p>';
     return;
   }
-  list.innerHTML = configs.map(c => `
-    <div class="config-item ${c.is_active ? 'is-active' : ''}" id="config-${c.id}">
-      <div class="config-item-info">
-        <div class="config-item-name">
-          ${escHtml(c.name)}
-          ${c.is_active ? '<span class="release-badge badge-stable">ACTIVE</span>' : ''}
-          <span class="status-pill status-${c.download_status}">${escHtml(c.download_status)}</span>
-        </div>
-        <div class="config-item-meta">
-          ${escHtml(c.eve_version)} · ${escHtml(c.architecture)} · ${escHtml(c.hv_mode)} · ${escHtml(c.variant)}
-          · ${escHtml(c.install_disk)}
-          ${c.controller_url ? ' · ' + escHtml(c.controller_url) : ''}
-        </div>
-      </div>
-      <div class="config-item-actions">
-        ${c.download_status === 'ready' && !c.is_active
-          ? `<button class="btn btn-secondary btn-sm" onclick="activateConfig('${c.id}')">Activate</button>`
-          : ''}
-        ${c.download_status === 'pending' || c.download_status === 'failed'
-          ? `<button class="btn btn-secondary btn-sm" onclick="redownload('${c.id}','${c.eve_version}','${c.architecture}','${c.hv_mode}','${c.variant}')">↻ Download</button>`
-          : ''}
-        <button class="btn btn-danger btn-sm" onclick="deleteConfig('${c.id}')">Delete</button>
-      </div>
-    </div>`).join('');
+  list.innerHTML = '';
+  configs.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'config-item' + (c.is_active ? ' active' : '');
+
+    const meta = document.createElement('div');
+    meta.className = 'config-item-meta';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'config-item-title';
+    const titleText = document.createTextNode(c.name + ' ');
+    titleRow.appendChild(titleText);
+    if (c.is_active) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-active';
+      badge.textContent = 'ACTIVE';
+      titleRow.appendChild(badge);
+    }
+
+    const sub = document.createElement('div');
+    sub.className = 'config-item-sub';
+    sub.textContent = `${c.eve_version} · ${c.architecture} · ${c.hv_mode} · ${c.variant}`;
+
+    const diskInfo = document.createElement('div');
+    diskInfo.className = 'config-item-sub';
+    diskInfo.textContent = c.install_disk + (c.controller_url ? ' → ' + c.controller_url : '');
+
+    const statusBadge = document.createElement('span');
+    const statusClassMap = {
+      ready: 'badge-ready',
+      downloading: 'badge-downloading',
+      extracting: 'badge-downloading',
+      failed: 'badge-failed',
+      pending: 'badge-pending',
+    };
+    statusBadge.className = `badge ${statusClassMap[c.download_status] || 'badge-pending'}`;
+    statusBadge.textContent = c.download_status;
+
+    meta.appendChild(titleRow);
+    meta.appendChild(sub);
+    meta.appendChild(diskInfo);
+    meta.appendChild(statusBadge);
+
+    const actions = document.createElement('div');
+    actions.className = 'config-item-actions';
+
+    if (!c.is_active && c.download_status === 'ready') {
+      const activateBtn = document.createElement('button');
+      activateBtn.className = 'btn btn-primary btn-sm';
+      activateBtn.textContent = 'Activate';
+      activateBtn.addEventListener('click', () => activateConfig(c.id));
+      actions.appendChild(activateBtn);
+    }
+
+    if (!['ready', 'downloading', 'extracting'].includes(c.download_status)) {
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'btn btn-secondary btn-sm';
+      dlBtn.textContent = '↻ Download';
+      dlBtn.addEventListener('click', () => redownload(c.id, c.eve_version, c.architecture, c.hv_mode, c.variant));
+      actions.appendChild(dlBtn);
+    }
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger btn-sm';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => deleteConfig(c.id, c.name));
+    actions.appendChild(deleteBtn);
+
+    item.appendChild(meta);
+    item.appendChild(actions);
+    list.appendChild(item);
+  });
 }
 
 async function activateConfig(id) {
@@ -520,24 +643,43 @@ async function deleteConfig(id) {
 }
 
 async function redownload(configId, version, arch, hv, variant) {
+  let consecutiveErrors = 0;
+  let poll;
+
   try {
     await api(`/api/artifacts/download?eve_version=${encodeURIComponent(version)}&architecture=${arch}&hv_mode=${hv}&variant=${variant}`, 'POST');
-    toast('Download started', 'info');
-    // Poll and refresh
-    const poll = setInterval(async () => {
+  } catch (e) {
+    toast('Could not start re-download: ' + e.message, 'error');
+    return;
+  }
+
+  poll = setInterval(async () => {
+    try {
       const data = await api(`/api/artifacts/status/${encodeURIComponent(version)}/${arch}/${hv}/${variant}`);
+      consecutiveErrors = 0;
       if (data.status === 'ready') {
         clearInterval(poll);
-        await loadConfigs();
-        toast('Download complete', 'success');
+        toast('Artifacts ready — reactivating config…', 'success');
+        try {
+          await api(`/api/configs/${configId}/activate`, 'POST');
+          await loadConfigs();
+          toast('Config reactivated.', 'success');
+        } catch (e) {
+          toast('Reactivation failed: ' + e.message, 'error');
+        }
       } else if (data.status === 'failed') {
         clearInterval(poll);
-        toast('Download failed: ' + (data.error || ''), 'error');
+        toast('Re-download failed: ' + (data.error || 'unknown error'), 'error');
+        await loadConfigs();
       }
-    }, 2000);
-  } catch (e) {
-    toast('Error: ' + e.message, 'error');
-  }
+    } catch (e) {
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        clearInterval(poll);
+        toast('Lost contact with server during re-download.', 'error');
+      }
+    }
+  }, 2000);
 }
 
 // ── Artifacts view ───────────────────────────────────────────────────────────
@@ -555,22 +697,43 @@ async function loadArtifacts() {
         </div>`;
       return;
     }
-    container.innerHTML = artifacts.map(a => `
-      <div class="config-item" style="margin-bottom:10px;">
-        <div class="config-item-info">
-          <div class="config-item-name">
-            ${escHtml(a.version)} / ${escHtml(a.combo)}
-            <span class="status-pill status-${a.status}">${escHtml(a.status)}</span>
-          </div>
-          <div class="config-item-meta">
-            Boot mode: ${escHtml(a.boot_mode)} · ${humanSize(a.size_bytes)}
-            · ${a.files.length} files
-          </div>
-        </div>
-        <div class="config-item-actions">
-          <button class="btn btn-danger btn-sm" onclick="deleteArtifacts('${escHtml(a.version)}','${escHtml(a.combo)}')">Delete</button>
-        </div>
-      </div>`).join('');
+    container.innerHTML = '';
+    artifacts.forEach(a => {
+      const item = document.createElement('div');
+      item.className = 'config-item';
+      item.style.marginBottom = '10px';
+
+      const info = document.createElement('div');
+      info.className = 'config-item-info';
+
+      const nameRow = document.createElement('div');
+      nameRow.className = 'config-item-name';
+      nameRow.textContent = `${a.version} / ${a.combo} `;
+      const statusSpan = document.createElement('span');
+      statusSpan.className = `status-pill status-${a.status}`;
+      statusSpan.textContent = a.status;
+      nameRow.appendChild(statusSpan);
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'config-item-meta';
+      metaRow.textContent = `Boot mode: ${a.boot_mode} · ${humanSize(a.size_bytes)} · ${a.files.length} files`;
+
+      info.appendChild(nameRow);
+      info.appendChild(metaRow);
+
+      const actions = document.createElement('div');
+      actions.className = 'config-item-actions';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger btn-sm';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => deleteArtifacts(a.version, a.combo));
+      actions.appendChild(delBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
+      container.appendChild(item);
+    });
   } catch (e) {
     container.innerHTML = `<div class="info-box error"><span class="info-box-icon">⚠</span><div class="info-box-content"><div class="info-box-title">Error</div><div class="info-box-body">${escHtml(e.message)}</div></div></div>`;
   }
@@ -586,6 +749,26 @@ async function deleteArtifacts(version, combo) {
   } catch (e) {
     toast('Error: ' + e.message, 'error');
   }
+}
+
+// ── Wizard reset ─────────────────────────────────────────────────────────────
+function resetWizard() {
+  state.currentConfigDbId = null;
+  state.wizardInProgress = false;
+  state.selectedVersion = null;
+  state.currentStep = 1;
+  // Reset UI
+  document.getElementById('step1-next') && (document.getElementById('step1-next').disabled = true);
+  document.getElementById('download-section') && (document.getElementById('download-section').style.display = 'none');
+  const createBtn = document.getElementById('create-btn');
+  if (createBtn) {
+    createBtn.style.display = '';
+    createBtn.disabled = false;
+    createBtn.innerHTML = '⬇ Download Artifacts &amp; Activate';
+  }
+  document.getElementById('dl-script-btn') && (document.getElementById('dl-script-btn').style.display = 'none');
+  document.getElementById('boot-btn') && (document.getElementById('boot-btn').style.display = 'none');
+  goToStep(1);
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -609,12 +792,12 @@ function val(id)     { return document.getElementById(id)?.value?.trim() || ''; 
 function checked(id) { return document.getElementById(id)?.checked || false; }
 
 function escHtml(s) {
-  if (!s) return '';
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function humanSize(bytes) {

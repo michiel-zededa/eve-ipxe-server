@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.models import Release
 from app.services.github_client import GitHubClient
+from app.utils import human_size
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/releases", tags=["releases"])
@@ -46,7 +47,7 @@ async def get_release(tag: str):
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
         except Exception as exc:
-            if "404" in str(exc):
+            if getattr(getattr(exc, "response", None), "status_code", None) == 404:
                 raise HTTPException(status_code=404, detail=f"Release {tag!r} not found")
             raise HTTPException(status_code=502, detail=str(exc))
     return release
@@ -68,7 +69,7 @@ async def get_release_assets(
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
         except Exception as exc:
-            if "404" in str(exc):
+            if getattr(getattr(exc, "response", None), "status_code", None) == 404:
                 raise HTTPException(status_code=404, detail=f"Release {tag!r} not found")
             raise
 
@@ -85,7 +86,7 @@ async def get_release_assets(
         assets.append({
             "name": a.name,
             "size": a.size,
-            "size_human": _human_size(a.size),
+            "size_human": human_size(a.size),
             "type": _asset_type(a.name),
             "arch": _extract_arch(a.name),
             "hv": _extract_hv(a.name),
@@ -93,14 +94,6 @@ async def get_release_assets(
         })
 
     return {"tag": tag, "assets": assets}
-
-
-def _human_size(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
 
 
 def _asset_type(name: str) -> str:
@@ -124,9 +117,13 @@ def _extract_arch(name: str) -> str:
 
 def _extract_hv(name: str) -> str:
     parts = name.split(".")
-    return parts[1] if len(parts) > 1 else "unknown"
+    if len(parts) > 1 and parts[1] in ("k", "kvm"):
+        return parts[1]
+    return "unknown"
 
 
 def _extract_variant(name: str) -> str:
     parts = name.split(".")
-    return parts[2] if len(parts) > 2 else "unknown"
+    if len(parts) > 2 and parts[2] in ("generic", "nvidia-jp5", "nvidia-jp6"):
+        return parts[2]
+    return "unknown"

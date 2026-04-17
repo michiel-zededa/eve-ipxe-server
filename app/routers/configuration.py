@@ -7,13 +7,14 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import (
     BootConfig,
     BootConfigCreate,
+    BootConfigListResponse,
     BootConfigResponse,
     DownloadStatus,
 )
@@ -39,13 +40,13 @@ async def _get_or_404(db: AsyncSession, config_id: str) -> BootConfig:
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-@router.get("", response_model=list[BootConfigResponse])
+@router.get("", response_model=list[BootConfigListResponse])
 async def list_configs(db: AsyncSession = Depends(get_db)):
     """List all saved boot configurations, newest first."""
     result = await db.execute(
         select(BootConfig).order_by(BootConfig.created_at.desc())
     )
-    return [_to_response(c) for c in result.scalars().all()]
+    return [BootConfigListResponse.model_validate(c) for c in result.scalars().all()]
 
 
 @router.post("", response_model=BootConfigResponse, status_code=201)
@@ -101,6 +102,14 @@ async def update_config(
     """Update an existing boot configuration."""
     cfg = await _get_or_404(db, config_id)
 
+    # Check if artifact-relevant fields changed — if so, reset download status
+    artifact_changed = (
+        cfg.eve_version   != payload.eve_version
+        or cfg.architecture != payload.architecture.value
+        or cfg.hv_mode      != payload.hv_mode.value
+        or cfg.variant      != payload.variant.value
+    )
+
     cfg.name                 = payload.name
     cfg.eve_version          = payload.eve_version
     cfg.architecture         = payload.architecture.value
@@ -118,11 +127,15 @@ async def update_config(
     cfg.console              = payload.console
     cfg.extra_cmdline        = payload.extra_cmdline
 
-    # If the EVE version or arch changed, reset download status
+    if artifact_changed:
+        cfg.download_status   = DownloadStatus.pending.value
+        cfg.download_error    = None
+        cfg.download_progress = None
+        cfg.is_active         = False
+
     await db.flush()
     await db.refresh(cfg)
 
-    # Regenerate the iPXE script if this is the active config
     if cfg.is_active and cfg.download_status == DownloadStatus.ready.value:
         try:
             ipxe_generator.write_active_script(cfg)
@@ -145,11 +158,12 @@ async def activate_config(config_id: str, db: AsyncSession = Depends(get_db)):
     Mark a configuration as active and regenerate the TFTP boot.ipxe script.
     Only one configuration can be active at a time.
     """
-    # De-activate all others
-    all_result = await db.execute(select(BootConfig))
-    for existing in all_result.scalars().all():
-        if existing.id != config_id:
-            existing.is_active = False
+    # De-activate all others efficiently
+    await db.execute(
+        update(BootConfig)
+        .where(BootConfig.id != config_id)
+        .values(is_active=False)
+    )
 
     cfg = await _get_or_404(db, config_id)
 

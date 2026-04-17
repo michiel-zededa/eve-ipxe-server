@@ -224,20 +224,6 @@ def generate_script(config: BootConfig) -> str:
             webui_port=webui_port,
             http_port=http_port,
         )
-        # Also patch the grub.cfg in the artifact directory
-        try:
-            if _key is None:
-                _key = ArtifactKey(
-                    eve_version=config.eve_version,
-                    architecture=Architecture(config.architecture),
-                    hv_mode=HypervisorMode(config.hv_mode),
-                    variant=Variant(config.variant),
-                )
-            dest = artifact_dir(_key)
-            if dest.exists():
-                patch_grub_cfg(dest, build_grub_vars(config))
-        except Exception as exc:
-            logger.warning("Could not patch grub.cfg: %s", exc)
     else:
         # BOOT_MODE_DIRECT or BOOT_MODE_UNKNOWN — fall back to direct iPXE kernel loading
         kernel_cmdline = build_kernel_cmdline(config)
@@ -273,17 +259,39 @@ def generate_menu_script(configs: list[BootConfig]) -> str:
 
 def write_active_script(config: BootConfig) -> Path:
     """
-    Write the iPXE script for *config* to the TFTP root:
+    Write the iPXE script for *config* to the TFTP root and patch grub.cfg:
       - config-<id>.ipxe  (config-specific URL)
       - boot.ipxe          (default — always points to the active config)
+      - EFI/BOOT/grub.cfg  (patched with install vars for grub-chain mode)
     Returns the path of boot.ipxe.
     """
     from app.services import tftp_server
+
+    # Determine boot mode to decide whether to patch grub.cfg
+    try:
+        _key = ArtifactKey(
+            eve_version=config.eve_version,
+            architecture=Architecture(config.architecture),
+            hv_mode=HypervisorMode(config.hv_mode),
+            variant=Variant(config.variant),
+        )
+        boot_mode = read_boot_mode(_key)
+        dest = artifact_dir(_key)
+    except Exception:
+        boot_mode = BOOT_MODE_GRUB_CHAIN
+        dest = None
 
     script = generate_script(config)
     tftp_server.write_boot_script(script, f"config-{config.id}.ipxe")
     tftp_server.write_boot_script(script, "boot.ipxe")
     logger.info("Updated TFTP boot.ipxe → config %s (%s)", config.id, config.name)
+
+    # Patch grub.cfg only when activating (not on preview)
+    if boot_mode == BOOT_MODE_GRUB_CHAIN and dest is not None and dest.exists():
+        try:
+            patch_grub_cfg(dest, build_grub_vars(config))
+        except Exception as exc:
+            logger.warning("Could not patch grub.cfg: %s", exc)
 
     settings = get_settings()
     return settings.tftp_root / "boot.ipxe"
