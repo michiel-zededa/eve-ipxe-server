@@ -161,8 +161,8 @@
             <div class="option-grid cols-2">
               <div class="option-tile selected" data-arch="amd64" onclick="selectArch('amd64')">
                 <div class="option-tile-icon">🖥</div>
-                <div class="option-tile-label">x86_64 / amd64</div>
-                <div class="option-tile-desc">Intel and AMD servers, workstations, x86 edge devices</div>
+                <div class="option-tile-label">amd64</div>
+                <div class="option-tile-desc">Intel and AMD servers, workstations, and edge devices</div>
               </div>
               <div class="option-tile" data-arch="arm64" onclick="selectArch('arm64')">
                 <div class="option-tile-icon">📱</div>
@@ -178,12 +178,12 @@
               <div class="option-tile selected" data-hv="kvm" onclick="selectHV('kvm')">
                 <div class="option-tile-icon">⚡</div>
                 <div class="option-tile-label">KVM</div>
-                <div class="option-tile-desc">EVE exposes KVM acceleration to its guest VMs. Works on bare metal and KVM hypervisors with nested virt enabled.</div>
+                <div class="option-tile-desc">EVE exposes hardware acceleration to its guest VMs. Runs on bare metal or inside a hypervisor.</div>
               </div>
               <div class="option-tile" data-hv="k" onclick="selectHV('k')" id="hv-k-tile">
                 <div class="option-tile-icon">🔧</div>
                 <div class="option-tile-label">k (no-KVM)</div>
-                <div class="option-tile-desc">EVE runs containers/VMs without KVM acceleration. Works on bare metal and KVM hypervisors. x86_64 only.</div>
+                <div class="option-tile-desc">EVE runs workloads without hardware VM acceleration. Runs on bare metal or inside a hypervisor. amd64 only.</div>
               </div>
             </div>
           </div>
@@ -199,7 +199,7 @@
               <div class="option-tile" data-scenario="vm" onclick="selectScenario('vm')">
                 <div class="option-tile-icon">💻</div>
                 <div class="option-tile-label">Virtual Machine</div>
-                <div class="option-tile-desc">QEMU, KVM hypervisor, or VMware VM — both k and kvm modes supported</div>
+                <div class="option-tile-desc">Running EVE inside a hypervisor — both k and kvm modes supported</div>
               </div>
               <div class="option-tile" data-scenario="edge" onclick="selectScenario('edge')">
                 <div class="option-tile-icon">🤖</div>
@@ -215,7 +215,7 @@
               <div class="option-tile selected" data-variant="generic" onclick="selectVariant('generic')">
                 <div class="option-tile-icon">🔲</div>
                 <div class="option-tile-label">Generic</div>
-                <div class="option-tile-desc">Standard x86 / ARM64 hardware</div>
+                <div class="option-tile-desc">Standard amd64 / ARM64 hardware</div>
               </div>
               <div class="option-tile" data-variant="nvidia-jp5" onclick="selectVariant('nvidia-jp5')" id="variant-jp5">
                 <div class="option-tile-icon">🟢</div>

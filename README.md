@@ -21,10 +21,9 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 
 | Target | Architecture | HV mode | Variant |
 |--------|-------------|---------|---------|
-| x86_64 bare metal | amd64 | k | generic |
-| x86_64 bare metal (KVM acceleration) | amd64 | kvm | generic |
-| x86_64 KVM hypervisor / QEMU VM | amd64 | k or kvm | generic |
-| ARM64 KVM / server | arm64 | kvm | generic |
+| amd64 bare metal or hypervisor | amd64 | k | generic |
+| amd64 bare metal or hypervisor (with VM acceleration) | amd64 | kvm | generic |
+| ARM64 bare metal or hypervisor | arm64 | kvm | generic |
 | Raspberry Pi 4/5 (UEFI) | arm64 | kvm | generic |
 | NVIDIA Jetson (JetPack 5) | arm64 | kvm | nvidia-jp5 |
 | NVIDIA Jetson (JetPack 6) | arm64 | kvm | nvidia-jp6 |
@@ -123,7 +122,7 @@ docker compose --profile dnsmasq up -d
 ```
 
 The dnsmasq container requires `network_mode: host` so it can receive DHCP broadcast packets.
-It handles BIOS PXE (DHCP options 66/67), UEFI x86_64 (arch 7), and UEFI ARM64 (arch 11).
+It handles BIOS PXE (DHCP options 66/67), UEFI amd64 (arch 7), and UEFI ARM64 (arch 11).
 
 ### Option B — Configure your existing DHCP server
 
@@ -202,17 +201,17 @@ Jetson Orin with JetPack 5/6 supports UEFI PXE boot:
    do not have a network installer, only raw images
 4. Set `install_disk=/dev/nvme0n1` (internal NVMe) or appropriate device
 
-### x86_64 — Bare metal vs KVM
+### amd64 — HV mode comparison
 
-| HV mode | Use case | Artifact prefix |
-|---------|----------|-----------------|
-| `k`     | Bare metal or KVM hypervisor — EVE manages workloads without exposing KVM to guests | `amd64.k.generic` |
-| `kvm`   | Bare metal or KVM hypervisor — EVE exposes KVM acceleration to its own guest VMs | `amd64.kvm.generic` |
+Both modes run on bare metal and inside a hypervisor. The difference is what EVE offers to its own workloads:
 
-Both modes install and run fine on physical hardware and inside KVM hypervisors (QEMU, Proxmox, ESXi with nested virt).
-The difference is whether EVE itself offers KVM acceleration to the workloads it hosts:
-- Use **`k`** when EVE workloads are containers or when KVM is not needed/available inside EVE.
-- Use **`kvm`** when EVE needs to run hardware-accelerated VMs as workloads (requires VT-x/AMD-V, enabled in the hypervisor for nested virt).
+| HV mode | EVE workload support | Artifact prefix |
+|---------|----------------------|-----------------|
+| `k`     | Containers and VMs without hardware acceleration | `amd64.k.generic` |
+| `kvm`   | Containers and hardware-accelerated VMs | `amd64.kvm.generic` |
+
+Choose **`kvm`** when EVE needs to run hardware-accelerated VMs as workloads.
+Choose **`k`** when only containers are needed, or when hardware VM acceleration is unavailable.
 
 ---
 
