@@ -294,18 +294,42 @@ FastAPI auto-generates interactive documentation at:
 
 Key endpoints:
 
+**Releases**
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/releases` | List EVE-OS releases from GitHub |
 | `GET` | `/api/releases/{tag}` | Get a specific release |
+| `GET` | `/api/releases/{tag}/assets` | List installer assets for a release (filter: `?arch=amd64&hv=kvm`) |
+
+**Boot configurations**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/configs` | List all boot configurations |
 | `POST` | `/api/configs` | Create a boot configuration |
-| `POST` | `/api/configs/{id}/activate` | Activate a config (writes boot.ipxe) |
+| `GET` | `/api/configs/{id}` | Get a single configuration |
+| `PUT` | `/api/configs/{id}` | Update a configuration |
+| `DELETE` | `/api/configs/{id}` | Delete a configuration |
+| `POST` | `/api/configs/{id}/activate` | Activate a config (writes boot.ipxe to TFTP) |
+| `GET` | `/api/configs/{id}/script` | Preview the generated iPXE script (no file write) |
+
+**Artifacts**
+
+| Method | Path | Description |
+|--------|------|-------------|
 | `POST` | `/api/artifacts/download` | Trigger artifact download |
-| `GET` | `/api/artifacts/stream/{…}` | SSE stream of download progress |
-| `GET` | `/api/artifacts/status/{…}` | Poll download status |
+| `GET` | `/api/artifacts/stream/{ver}/{arch}/{hv}/{variant}` | SSE stream of download progress |
+| `GET` | `/api/artifacts/status/{ver}/{arch}/{hv}/{variant}` | Poll download status |
 | `GET` | `/api/artifacts/list` | List cached artifacts |
+| `DELETE` | `/api/artifacts/{ver}/{arch}/{hv}/{variant}` | Delete cached artifacts |
+
+**Boot scripts & info**
+
+| Method | Path | Description |
+|--------|------|-------------|
 | `GET` | `/api/server-info` | Server IP / port information |
-| `GET` | `/ipxe/boot.ipxe` | Serve the active boot script |
+| `GET` | `/ipxe/boot.ipxe` | Serve the active boot script (TFTP chainload target) |
 | `GET` | `/ipxe/config/{id}/script` | Config-specific boot script |
 
 ---
@@ -388,9 +412,11 @@ eve-ipxe-server/
     │   ├── boot_direct.ipxe.j2       # pre-v12 direct kernel boot script
     │   └── menu.ipxe.j2              # Multi-config selection menu
     └── static/
-        ├── index.html          # Single-page wizard UI
-        ├── css/style.css       # ZEDEDA design system
-        └── js/app.js           # Wizard logic, API calls, SSE progress
+        ├── index.html              # Single-page wizard UI
+        ├── css/
+        │   └── style.css           # ZEDEDA design system (2026 glassmorphism)
+        └── js/
+            └── app.js              # Wizard logic, API calls, SSE progress
 ```
 
 ---
