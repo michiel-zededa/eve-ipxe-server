@@ -874,12 +874,14 @@ async function stopServer() {
 
   try {
     await api('/api/admin/shutdown', 'POST');
-  } catch (_) {
-    // Expected — the server closes the connection as it shuts down
+    btn.innerHTML = '🔴 Server stopped';
+    toast('Server is shutting down — containers will stop momentarily.', 'success');
+  } catch (err) {
+    // 503 means the Docker socket isn't available — surface the message
+    toast('Cannot stop: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stop';
   }
-
-  btn.innerHTML = '🔴 Server stopped';
-  toast('Server is shutting down — containers will stop momentarily.', 'success');
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
