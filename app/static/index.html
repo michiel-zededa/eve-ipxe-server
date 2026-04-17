@@ -178,12 +178,12 @@
               <div class="option-tile selected" data-hv="kvm" onclick="selectHV('kvm')">
                 <div class="option-tile-icon">⚡</div>
                 <div class="option-tile-label">KVM</div>
-                <div class="option-tile-desc">Hardware-accelerated virtualisation. Recommended for most deployments.</div>
+                <div class="option-tile-desc">EVE exposes KVM acceleration to its guest VMs. Works on bare metal and KVM hypervisors with nested virt enabled.</div>
               </div>
               <div class="option-tile" data-hv="k" onclick="selectHV('k')" id="hv-k-tile">
                 <div class="option-tile-icon">🔧</div>
                 <div class="option-tile-label">k (no-KVM)</div>
-                <div class="option-tile-desc">Bare-metal without KVM acceleration. x86_64 only.</div>
+                <div class="option-tile-desc">EVE runs containers/VMs without KVM acceleration. Works on bare metal and KVM hypervisors. x86_64 only.</div>
               </div>
             </div>
           </div>
@@ -199,7 +199,7 @@
               <div class="option-tile" data-scenario="vm" onclick="selectScenario('vm')">
                 <div class="option-tile-icon">💻</div>
                 <div class="option-tile-label">Virtual Machine</div>
-                <div class="option-tile-desc">QEMU/KVM or VMware VM (dev/test)</div>
+                <div class="option-tile-desc">QEMU, KVM hypervisor, or VMware VM — both k and kvm modes supported</div>
               </div>
               <div class="option-tile" data-scenario="edge" onclick="selectScenario('edge')">
                 <div class="option-tile-icon">🤖</div>

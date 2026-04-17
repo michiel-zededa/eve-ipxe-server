@@ -22,7 +22,8 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 | Target | Architecture | HV mode | Variant |
 |--------|-------------|---------|---------|
 | x86_64 bare metal | amd64 | k | generic |
-| x86_64 KVM / VM | amd64 | kvm | generic |
+| x86_64 bare metal (KVM acceleration) | amd64 | kvm | generic |
+| x86_64 KVM hypervisor / QEMU VM | amd64 | k or kvm | generic |
 | ARM64 KVM / server | arm64 | kvm | generic |
 | Raspberry Pi 4/5 (UEFI) | arm64 | kvm | generic |
 | NVIDIA Jetson (JetPack 5) | arm64 | kvm | nvidia-jp5 |
@@ -205,11 +206,13 @@ Jetson Orin with JetPack 5/6 supports UEFI PXE boot:
 
 | HV mode | Use case | Artifact prefix |
 |---------|----------|-----------------|
-| `k`     | Physical server, no KVM, max performance | `amd64.k.generic` |
-| `kvm`   | Physical server with KVM, or QEMU VM | `amd64.kvm.generic` |
+| `k`     | Bare metal or KVM hypervisor — EVE manages workloads without exposing KVM to guests | `amd64.k.generic` |
+| `kvm`   | Bare metal or KVM hypervisor — EVE exposes KVM acceleration to its own guest VMs | `amd64.kvm.generic` |
 
-For **production bare-metal servers**, `k` mode may offer better performance.
-For **QEMU/KVM testing**, always use `kvm` mode.
+Both modes install and run fine on physical hardware and inside KVM hypervisors (QEMU, Proxmox, ESXi with nested virt).
+The difference is whether EVE itself offers KVM acceleration to the workloads it hosts:
+- Use **`k`** when EVE workloads are containers or when KVM is not needed/available inside EVE.
+- Use **`kvm`** when EVE needs to run hardware-accelerated VMs as workloads (requires VT-x/AMD-V, enabled in the hypervisor for nested virt).
 
 ---
 
