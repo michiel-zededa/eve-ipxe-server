@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import (
     JSON, Boolean, Column, DateTime, Enum, Integer, String, Text,
     func,
@@ -140,7 +140,7 @@ class ArtifactStatusResponse(BaseModel):
 
 class BootConfigCreate(BaseModel):
     name: str = "Default Config"
-    eve_version: str
+    eve_version: str = Field(..., min_length=1, description="EVE-OS release tag (e.g. '16.12.0')")
     architecture: Architecture
     hv_mode: HypervisorMode = HypervisorMode.kvm
     variant: Variant = Variant.generic

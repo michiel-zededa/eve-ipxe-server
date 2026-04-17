@@ -32,7 +32,7 @@ set url {{ artifact_http_base }}/
 
 # ── Console ───────────────────────────────────────────────────────────────────
 {% set consoles = config.console.split() if config.console else ['tty0', 'ttyS0,115200n8'] %}
-set console {% for c in consoles %}console={{ c }} {% endfor %}
+set console {% for c in consoles %}console={{ c }}{% if not loop.last %} {% endif %}{% endfor %}
 
 # ── Vendor-specific console tweaks ────────────────────────────────────────────
 iseq ${smbios/manufacturer} Huawei      && set console console=ttyAMA0,115200n8 ||

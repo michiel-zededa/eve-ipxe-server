@@ -70,14 +70,17 @@ function showView(name) {
   }
 
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+  // Clear active from both sidebar items AND mobile nav items
+  document.querySelectorAll('.sidebar-item, .mobile-nav-item').forEach(s => s.classList.remove('active'));
 
   const view = document.getElementById(`view-${name}`);
   if (view) view.classList.add('active');
 
-  const navItem = document.querySelector(`[data-view="${name}"]`);
-  if (navItem) navItem.classList.add('active');
+  // Mark all elements with data-view matching this name as active
+  document.querySelectorAll(`[data-view="${name}"]`).forEach(el => el.classList.add('active'));
 
+  // BUG 3 fix: always clear currentConfigDbId when navigating to wizard
+  // (whether or not wizardInProgress — user intent is to start fresh)
   if (name === 'wizard' && !state.wizardInProgress) {
     state.currentConfigDbId = null;
   }
@@ -88,9 +91,17 @@ function showView(name) {
 
 // ── Wizard step navigation ───────────────────────────────────────────────────
 function validateStep(to) {
-  if (to === 2) {
+  // Must have a version selected before advancing past step 1
+  if (to >= 2) {
     if (!state.selectedVersion) {
       toast('Please select an EVE-OS version first.', 'error');
+      return false;
+    }
+  }
+  // Must have a platform selected before advancing past step 2
+  if (to >= 3) {
+    if (!state.selectedArch || !state.selectedHV) {
+      toast('Please select a target platform.', 'error');
       return false;
     }
   }
@@ -107,7 +118,12 @@ function validateStep(to) {
 
 function goToStep(n) {
   const current = state.currentStep || 1;
-  if (n > current && !validateStep(n)) return;
+  // Validate every intermediate step when jumping forward via step indicator
+  if (n > current) {
+    for (let check = current + 1; check <= n; check++) {
+      if (!validateStep(check)) return;
+    }
+  }
 
   if (n === 4) renderReview();
 
@@ -362,45 +378,57 @@ async function streamDownloadProgress(params, configId) {
     const es = new EventSource(url);
     state.downloadEventSource = es;
 
+    // Guard against double-resolution: 'done' handler and onerror may both fire
+    // when the server closes the SSE connection cleanly (browser fires onerror on close).
+    let settled = false;
+    function settle(fn, arg) {
+      if (settled) return;
+      settled = true;
+      es.close();
+      state.downloadEventSource = null;
+      fn(arg);
+    }
+
     es.addEventListener('progress', e => {
       const data = JSON.parse(e.data);
       updateDownloadUI(data);
     });
 
     es.addEventListener('done', async e => {
-      es.close();
       const data = JSON.parse(e.data);
       updateDownloadUI(data);
 
       if (data.status === 'ready') {
         try {
-          // Activate the config
           await api(`/api/configs/${configId}/activate`, 'POST');
-          // Load the script preview
           await loadScriptPreview(configId);
           toast('Configuration activated!', 'success');
           document.getElementById('create-btn').style.display = 'none';
           document.getElementById('dl-script-btn').style.display = '';
           document.getElementById('boot-btn').style.display = '';
           await loadConfigCount();
-          resolve();
+          settle(resolve, undefined);
         } catch (err) {
           toast('Activation error: ' + err.message, 'error');
-          reject(err);
+          settle(reject, err);
         }
       } else {
         const msg = data.error || 'Download failed';
         toast('Download failed: ' + msg, 'error');
         document.getElementById('create-btn').disabled = false;
         document.getElementById('create-btn').innerHTML = '⬇ Retry Download';
-        reject(new Error(msg));
+        settle(reject, new Error(msg));
       }
     });
 
     es.onerror = () => {
+      if (settled) return;  // 'done' already handled it — connection closed cleanly
       es.close();
-      // SSE may close naturally — check status via polling
-      pollUntilReady(params, configId, resolve, reject);
+      // SSE failed mid-stream — fall back to polling
+      pollUntilReady(params, configId,
+        (v) => settle(resolve, v),
+        (e) => settle(reject, e),
+      );
     };
   });
 }
@@ -757,11 +785,34 @@ async function deleteArtifacts(version, combo) {
 
 // ── Wizard reset ─────────────────────────────────────────────────────────────
 function resetWizard() {
+  // Close any in-flight SSE stream
+  if (state.downloadEventSource) {
+    state.downloadEventSource.close();
+    state.downloadEventSource = null;
+  }
+
+  // Reset all state fields
   state.currentConfigDbId = null;
-  state.wizardInProgress = false;
-  state.selectedVersion = null;
-  state.currentStep = 1;
-  // Reset UI
+  state.wizardInProgress  = false;
+  state.selectedVersion   = null;
+  state.selectedArch      = 'amd64';
+  state.selectedHV        = 'kvm';
+  state.selectedScenario  = 'baremetal';
+  state.selectedVariant   = 'generic';
+  state.currentStep       = 1;
+
+  // Clear visual tile selections so display matches state
+  document.querySelectorAll('.option-tile').forEach(t => t.classList.remove('selected'));
+  // Reselect the default tiles (amd64 + kvm + baremetal + generic)
+  const defaultArch = document.querySelector('.option-tile[data-arch="amd64"]');
+  const defaultHv   = document.querySelector('.option-tile[data-hv="kvm"]');
+  if (defaultArch) defaultArch.classList.add('selected');
+  if (defaultHv)   defaultHv.classList.add('selected');
+
+  // Clear selected release card
+  document.querySelectorAll('.release-card').forEach(c => c.classList.remove('selected'));
+
+  // Reset download section UI
   document.getElementById('step1-next') && (document.getElementById('step1-next').disabled = true);
   document.getElementById('download-section') && (document.getElementById('download-section').style.display = 'none');
   const createBtn = document.getElementById('create-btn');

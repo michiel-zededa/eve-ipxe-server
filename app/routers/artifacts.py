@@ -237,6 +237,9 @@ async def delete_artifacts(
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Failed to delete artifacts: {exc}")
 
+    # Evict the stale in-memory progress so status endpoints return "unknown" (not "ready")
+    artifact_manager.clear_progress(key.cache_dir_name())
+
     # Reset download status in DB
     result = await db.execute(
         select(BootConfig).where(

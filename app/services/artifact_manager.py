@@ -98,6 +98,11 @@ def get_progress(key: str) -> dict:
                                 "bytes_total": None})
 
 
+def clear_progress(key: str) -> None:
+    """Remove a key from the in-memory progress store (call after artifact deletion)."""
+    _progress.pop(key, None)
+
+
 def artifact_dir(key: ArtifactKey) -> Path:
     cfg = get_settings()
     return cfg.artifacts_dir / key.cache_dir_name()

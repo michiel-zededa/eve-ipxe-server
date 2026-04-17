@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models import Release
@@ -33,6 +34,12 @@ async def list_releases(
                 page=page,
                 include_prereleases=include_prereleases,
             )
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise HTTPException(
+                status_code=502,
+                detail=f"GitHub API returned {status}: {exc.response.text[:200]}",
+            )
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
     return releases
@@ -44,11 +51,14 @@ async def get_release(tag: str):
     async with GitHubClient() as gh:
         try:
             release = await gh.get_release(tag)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
-        except Exception as exc:
-            if getattr(getattr(exc, "response", None), "status_code", None) == 404:
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
                 raise HTTPException(status_code=404, detail=f"Release {tag!r} not found")
+            raise HTTPException(
+                status_code=502,
+                detail=f"GitHub API returned {exc.response.status_code}: {exc.response.text[:200]}",
+            )
+        except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
     return release
 

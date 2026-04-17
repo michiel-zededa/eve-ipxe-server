@@ -140,7 +140,12 @@ async def update_config(
         try:
             ipxe_generator.write_active_script(cfg)
         except Exception as exc:
-            logger.warning("Could not regenerate boot script: %s", exc)
+            # Artifacts may have been deleted externally; mark config as needing re-download
+            logger.warning("Could not regenerate boot script for config %s: %s", config_id, exc)
+            cfg.is_active = False
+            cfg.download_status = DownloadStatus.pending.value
+            await db.flush()
+            await db.refresh(cfg)
 
     return _to_response(cfg)
 
