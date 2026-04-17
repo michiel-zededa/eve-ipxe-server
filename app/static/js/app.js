@@ -213,6 +213,38 @@ function selectRelease(tag, cardEl) {
   cardEl.classList.add('selected');
   state.selectedVersion = tag;
   document.getElementById('step1-next').disabled = false;
+  applyVersionConstraints(tag);
+}
+
+/**
+ * The EVE-OS 'k' (no-KVM) HV mode was first introduced in EVE 16.x.
+ * Disable it and warn when an older version is selected.
+ */
+function eveMajorVersion(tag) {
+  // Tags look like "16.12.0", "v16.12.0", "eve-16.12.0", "16.12.0-lts", etc.
+  const m = tag.match(/(\d+)\.\d/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function applyVersionConstraints(tag) {
+  const major = eveMajorVersion(tag);
+  const kTile  = document.getElementById('hv-k-tile');
+  const kNote  = document.getElementById('hv-k-version-note');
+  const kSupported = major >= 16;
+
+  if (!kSupported) {
+    kTile.classList.add('disabled');
+    kTile.title = 'k mode requires EVE ≥ 16.x';
+    if (kNote) kNote.style.display = 'flex';
+    if (state.selectedHV === 'k') selectHV('kvm');
+  } else {
+    // Only re-enable if arch also allows it (amd64 only)
+    if (state.selectedArch !== 'arm64') {
+      kTile.classList.remove('disabled');
+      kTile.title = '';
+    }
+    if (kNote) kNote.style.display = 'none';
+  }
 }
 
 // ── Step 2: Platform selectors ───────────────────────────────────────────────
@@ -232,8 +264,11 @@ function selectArch(arch) {
     document.getElementById('variant-jp5').style.display = '';
     document.getElementById('variant-jp6').style.display = '';
   } else {
-    kTile.classList.remove('disabled');
-    kTile.title = '';
+    // Only re-enable k if the selected version also supports it
+    if (eveMajorVersion(state.selectedVersion || '') >= 16) {
+      kTile.classList.remove('disabled');
+      kTile.title = '';
+    }
     document.getElementById('variant-jp5').style.display = 'none';
     document.getElementById('variant-jp6').style.display = 'none';
     if (['nvidia-jp5','nvidia-jp6'].includes(state.selectedVariant)) {
@@ -824,6 +859,25 @@ function resetWizard() {
   document.getElementById('dl-script-btn') && (document.getElementById('dl-script-btn').style.display = 'none');
   document.getElementById('boot-btn') && (document.getElementById('boot-btn').style.display = 'none');
   goToStep(1);
+}
+
+// ── Server shutdown ───────────────────────────────────────────────────────────
+async function stopServer() {
+  const msg = 'Stop the entire server stack?\n\nThis will shut down all containers (webui, nginx, and optionally dnsmasq).\nThe web UI will become unreachable immediately.';
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('stop-server-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stopping…';
+
+  try {
+    await api('/api/admin/shutdown', 'POST');
+  } catch (_) {
+    // Expected — the server closes the connection as it shuts down
+  }
+
+  btn.innerHTML = '🔴 Server stopped';
+  toast('Server is shutting down — containers will stop momentarily.', 'success');
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────

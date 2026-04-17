@@ -103,6 +103,19 @@ def clear_progress(key: str) -> None:
     _progress.pop(key, None)
 
 
+def is_downloading(key: ArtifactKey) -> bool:
+    """
+    Return True only if a download is *actively running* right now (lock is held).
+
+    Using the lock rather than the progress dict avoids false positives from
+    stale 'downloading' / 'extracting' entries left over after a crash or
+    container restart.
+    """
+    cache_key = key.cache_dir_name()
+    lock = _download_locks.get(cache_key)
+    return lock is not None and lock.locked()
+
+
 def artifact_dir(key: ArtifactKey) -> Path:
     cfg = get_settings()
     return cfg.artifacts_dir / key.cache_dir_name()

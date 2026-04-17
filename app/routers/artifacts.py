@@ -224,9 +224,10 @@ async def delete_artifacts(
     if not dest.exists():
         raise HTTPException(status_code=404, detail="No cached artifacts found for this combination")
 
-    # Refuse to delete while a download is in progress
-    progress = artifact_manager.get_progress(key.cache_dir_name())
-    if progress["status"] in (DownloadStatus.downloading.value, DownloadStatus.extracting.value):
+    # Refuse to delete while a download is *actively running* (lock held).
+    # We check the lock rather than the progress dict, which can be stale
+    # after a crash or container restart.
+    if artifact_manager.is_downloading(key):
         raise HTTPException(
             status_code=409,
             detail="Cannot delete artifacts while a download is in progress",

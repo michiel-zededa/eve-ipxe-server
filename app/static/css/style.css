@@ -127,6 +127,26 @@ code { font-family: var(--font-mono); font-size: 0.9em; color: var(--blue-light)
   transition: border-color 0.2s;
 }
 .server-badge:hover { border-color: var(--border-mid); }
+
+.topbar-stop-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 12px; font-weight: 600; font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  margin-left: 8px;
+}
+.topbar-stop-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+}
+.topbar-stop-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .server-badge-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--green);

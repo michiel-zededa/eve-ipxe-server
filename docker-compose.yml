@@ -18,6 +18,9 @@ services:
       - artifacts:/data/artifacts
       - config:/data/config
       - tftp-root:/data/tftp
+      # Mount the Docker socket to enable the "Stop Server" button in the web UI.
+      # Remove this line if you prefer not to give the container Docker API access.
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
       WEBUI_PORT:        "8080"

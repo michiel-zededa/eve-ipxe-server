@@ -52,6 +52,10 @@
       <div class="server-badge-dot"></div>
       <span id="server-host-display">Loading…</span>
     </div>
+    <button class="topbar-stop-btn" id="stop-server-btn" onclick="stopServer()" title="Stop all server containers (compose down)">
+      <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      Stop
+    </button>
   </header>
 
   <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
@@ -214,28 +218,35 @@
               <div class="option-tile" data-hv="k" onclick="selectHV('k')" id="hv-k-tile">
                 <div class="option-tile-icon">🔧</div>
                 <div class="option-tile-label">k (no-KVM)</div>
-                <div class="option-tile-desc">EVE runs workloads without hardware VM acceleration. Runs on bare metal or inside a hypervisor. amd64 only.</div>
+                <div class="option-tile-desc">EVE runs workloads without hardware VM acceleration. amd64 only, requires EVE ≥ 16.x.</div>
+              </div>
+            </div>
+            <div class="info-box warning mt-3" id="hv-k-version-note" style="display:none;">
+              <span class="info-box-icon">ℹ</span>
+              <div class="info-box-content">
+                <div class="info-box-title">k mode not available</div>
+                <div class="info-box-body">The selected EVE-OS version does not ship a <code>k</code> variant. k mode was introduced in EVE 16.x. Select EVE ≥ 16.x or use KVM mode.</div>
               </div>
             </div>
           </div>
 
           <div class="form-section">
-            <div class="form-section-title">Install scenario</div>
+            <div class="form-section-title">Install scenario <span class="hint" style="text-transform:none; letter-spacing:0">— sets console defaults</span></div>
             <div class="option-grid cols-3">
               <div class="option-tile selected" data-scenario="baremetal" onclick="selectScenario('baremetal')">
                 <div class="option-tile-icon">🏭</div>
-                <div class="option-tile-label">Bare metal</div>
-                <div class="option-tile-desc">Physical server, no hypervisor layer above EVE</div>
+                <div class="option-tile-label">Bare metal / hypervisor</div>
+                <div class="option-tile-desc">Physical server or hypervisor guest. Console: tty0 + ttyS0.</div>
               </div>
               <div class="option-tile" data-scenario="vm" onclick="selectScenario('vm')">
                 <div class="option-tile-icon">💻</div>
-                <div class="option-tile-label">Virtual Machine</div>
-                <div class="option-tile-desc">Running EVE inside a hypervisor — both k and kvm modes supported</div>
+                <div class="option-tile-label">QEMU / KVM guest</div>
+                <div class="option-tile-desc">Testing in a local QEMU/KVM VM. Console preset: hvc0 + ttyS0.</div>
               </div>
               <div class="option-tile" data-scenario="edge" onclick="selectScenario('edge')">
                 <div class="option-tile-icon">🤖</div>
-                <div class="option-tile-label">Edge Device</div>
-                <div class="option-tile-desc">Raspberry Pi, NVIDIA Jetson, industrial edge hardware</div>
+                <div class="option-tile-label">ARM64 edge board</div>
+                <div class="option-tile-desc">Raspberry Pi, NVIDIA Jetson. Console preset: ttyAMA0 (ARM UART). amd64 → same as bare metal.</div>
               </div>
             </div>
           </div>
