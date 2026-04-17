@@ -279,7 +279,9 @@ function selectArch(arch) {
 }
 
 function selectHV(hv) {
-  if (hv === 'k' && state.selectedArch === 'arm64') return;
+  // Respect the disabled state — covers both ARM64 and version-gate cases
+  const tile = document.querySelector(`[data-hv="${hv}"]`);
+  if (tile && tile.classList.contains('disabled')) return;
   state.selectedHV = hv;
   document.querySelectorAll('[data-hv]').forEach(t =>
     t.classList.toggle('selected', t.dataset.hv === hv));
