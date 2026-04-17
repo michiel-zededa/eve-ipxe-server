@@ -48,7 +48,7 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-org/eve-ipxe-server
+git clone https://github.com/michiel-zededa/eve-ipxe-server
 cd eve-ipxe-server
 
 # 1. Configure environment
@@ -282,8 +282,6 @@ Parameters injected into the grub.cfg (v12+) or kernel cmdline (pre-v12):
 | `eve_reboot_after_install` | Auto-reboot after install | `1` |
 | `eve_nuke_disk` | Forcibly wipe disk | `/dev/sda` |
 | `eve_pause_before_install` | Drop to shell before install | `1` |
-| `eve_pause_after_install` | Drop to shell after install | `1` |
-| `eve_install_debug` | Enable installer debug output | `true` |
 
 ---
 
@@ -365,7 +363,7 @@ See `.env.example` for the full list. Key variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SERVER_HOST` | auto | LAN IP of this server (auto-detected if unset) |
-| `BIND_ADDRESS` | `0.0.0.0` | Host interface to bind ports to |
+| `BIND_ADDRESS` | `0.0.0.0` | Host interface for Docker port binding (compose only, not read by the app) |
 | `WEBUI_PORT` | `8080` | Web UI and API port |
 | `HTTP_PORT` | `8081` | nginx artifact HTTP port |
 | `GITHUB_TOKEN` | — | GitHub PAT to raise API rate limit |
