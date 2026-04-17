@@ -21,12 +21,14 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 
 | Target | Architecture | HV mode | Variant |
 |--------|-------------|---------|---------|
-| amd64 bare metal or hypervisor | amd64 | k | generic |
+| amd64 bare metal or hypervisor | amd64 | k ¹ | generic |
 | amd64 bare metal or hypervisor (with VM acceleration) | amd64 | kvm | generic |
 | ARM64 bare metal or hypervisor | arm64 | kvm | generic |
 | Raspberry Pi 4/5 (UEFI) | arm64 | kvm | generic |
 | NVIDIA Jetson (JetPack 5) | arm64 | kvm | nvidia-jp5 |
 | NVIDIA Jetson (JetPack 6) | arm64 | kvm | nvidia-jp6 |
+
+> ¹ The `k` (no-KVM) HV mode was introduced in **EVE 16.x**. It is not available in older releases.
 
 > **Note:** NVIDIA JetPack variants do **not** ship a network installer (`installer-net.tar`). Use the raw installer image and flash it via USB/SD card for initial provisioning.
 
@@ -53,10 +55,23 @@ cp .env.example .env
 #   SERVER_HOST=192.168.1.10
 
 # 2. Start the stack
-docker compose up -d
+./server.sh start          # or: docker compose up -d
 
 # 3. Open the wizard in your browser
 open http://localhost:8080
+```
+
+The included `server.sh` script manages the stack:
+
+```bash
+./server.sh start           # start all containers (detached)
+./server.sh stop            # stop and remove all containers
+./server.sh restart         # restart containers
+./server.sh status          # show container status + health checks
+./server.sh logs [service]  # tail logs (e.g. ./server.sh logs webui)
+./server.sh build           # rebuild images after a code change
+
+PROFILES=dnsmasq ./server.sh start   # also start the optional DHCP service
 ```
 
 Follow the 4-step wizard:
@@ -205,13 +220,14 @@ Jetson Orin with JetPack 5/6 supports UEFI PXE boot:
 
 Both modes run on bare metal and inside a hypervisor. The difference is what EVE offers to its own workloads:
 
-| HV mode | EVE workload support | Artifact prefix |
-|---------|----------------------|-----------------|
-| `k`     | Containers and VMs without hardware acceleration | `amd64.k.generic` |
-| `kvm`   | Containers and hardware-accelerated VMs | `amd64.kvm.generic` |
+| HV mode | EVE workload support | Artifact prefix | Min EVE version |
+|---------|----------------------|-----------------|-----------------|
+| `k`     | Containers and VMs without hardware acceleration | `amd64.k.generic` | 16.x |
+| `kvm`   | Containers and hardware-accelerated VMs | `amd64.kvm.generic` | any |
 
 Choose **`kvm`** when EVE needs to run hardware-accelerated VMs as workloads.
 Choose **`k`** when only containers are needed, or when hardware VM acceleration is unavailable.
+The wizard automatically disables the `k` option when a pre-16.x release is selected.
 
 ---
 
@@ -332,6 +348,12 @@ Key endpoints:
 | `GET` | `/ipxe/boot.ipxe` | Serve the active boot script (TFTP chainload target) |
 | `GET` | `/ipxe/config/{id}/script` | Config-specific boot script |
 
+**Admin**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/admin/shutdown` | Stop all stack containers gracefully (requires Docker socket mount) |
+
 ---
 
 ## Environment Variables
@@ -383,8 +405,9 @@ See `.env.example` for the full list. Key variables:
 
 ```
 eve-ipxe-server/
-├── docker-compose.yml          # Service definitions
+├── docker-compose.yml          # Service definitions (includes Docker socket mount)
 ├── Dockerfile                  # webui image (FastAPI + TFTP)
+├── server.sh                   # Stack management: start / stop / restart / status / logs
 ├── requirements.txt
 ├── .env.example
 ├── nginx/
@@ -401,7 +424,8 @@ eve-ipxe-server/
     │   ├── releases.py         # GitHub API proxy
     │   ├── configuration.py    # Boot config CRUD
     │   ├── artifacts.py        # Download mgmt + SSE progress
-    │   └── ipxe.py             # iPXE script serving
+    │   ├── ipxe.py             # iPXE script serving
+    │   └── admin.py            # Shutdown endpoint (POST /api/admin/shutdown)
     ├── services/
     │   ├── github_client.py    # GitHub releases API client
     │   ├── artifact_manager.py # Download, extract, grub.cfg patch
