@@ -529,6 +529,8 @@ async function loadConfigs() {
     const configs = await api('/api/configs');
     renderConfigs(configs);
     document.getElementById('config-count').textContent = configs.length;
+    const mobileCount = document.getElementById('config-count-mobile');
+    if (mobileCount) mobileCount.textContent = configs.length;
   } catch (e) {
     list.innerHTML = `<div class="info-box error"><span class="info-box-icon">⚠</span><div class="info-box-content"><div class="info-box-title">Error</div><div class="info-box-body">${escHtml(e.message)}</div></div></div>`;
   }
@@ -538,6 +540,8 @@ async function loadConfigCount() {
   try {
     const configs = await api('/api/configs');
     document.getElementById('config-count').textContent = configs.length;
+    const mobileCount = document.getElementById('config-count-mobile');
+    if (mobileCount) mobileCount.textContent = configs.length;
   } catch (_) {}
 }
 
