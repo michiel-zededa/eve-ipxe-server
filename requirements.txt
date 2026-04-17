@@ -1,0 +1,12 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+httpx==0.28.1
+tftpy==0.8.0
+jinja2==3.1.4
+python-multipart==0.0.12
+pycdlib==1.14.0
+aiofiles==24.1.0
+pydantic-settings==2.6.1
+sse-starlette==2.1.3

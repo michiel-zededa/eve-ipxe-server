@@ -1,0 +1,106 @@
+services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # webui  — FastAPI backend + embedded TFTP server
+  # ─────────────────────────────────────────────────────────────────────────────
+  webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eve-ipxe-webui
+    hostname: eve-ipxe-webui
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${WEBUI_PORT:-8080}:8080"
+      # TFTP runs on 6969 inside the container; Docker maps it to host port 69.
+      # This avoids needing CAP_NET_BIND_SERVICE for privileged port 69 inside
+      # the container while still exposing the standard TFTP port on the host.
+      - "${BIND_ADDRESS:-0.0.0.0}:69:6969/udp"
+    volumes:
+      - artifacts:/data/artifacts
+      - config:/data/config
+      - tftp-root:/data/tftp
+    environment:
+      SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
+      WEBUI_PORT:        "8080"
+      TFTP_PORT:         "6969"
+      ARTIFACTS_DIR:     "/data/artifacts"
+      CONFIG_DIR:        "/data/config"
+      TFTP_ROOT:         "/data/tftp"
+      HTTP_PORT:         "${HTTP_PORT:-8081}"        # nginx artifact port
+      GITHUB_TOKEN:      "${GITHUB_TOKEN:-}"         # optional; raises API rate limit
+      LOG_LEVEL:         "${LOG_LEVEL:-info}"
+    networks:
+      - eve-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # nginx  — high-performance HTTP server for large artifact files
+  #          (kernel, initrd, installer ISOs).  The webui API proxies through
+  #          here so all artifact URLs are served from a single base.
+  # ─────────────────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: eve-ipxe-nginx
+    hostname: eve-ipxe-nginx
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8081}:80"
+    volumes:
+      - artifacts:/usr/share/nginx/artifacts:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - eve-net
+    restart: unless-stopped
+    depends_on:
+      webui:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # dnsmasq  — optional lightweight DHCP+TFTP-proxy server.
+  #             Enable with:  docker compose --profile dnsmasq up
+  #             Requires host networking for DHCP broadcast to work.
+  # ─────────────────────────────────────────────────────────────────────────────
+  dnsmasq:
+    build:
+      context: ./dnsmasq
+      dockerfile: Dockerfile
+    container_name: eve-ipxe-dnsmasq
+    hostname: eve-ipxe-dnsmasq
+    network_mode: host          # DHCP broadcast requires host networking
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - config:/data/config:ro
+    environment:
+      INTERFACE:       "${INTERFACE:-eth0}"
+      DHCP_RANGE:      "${DHCP_RANGE:-192.168.1.100,192.168.1.200,12h}"
+      DHCP_ROUTER:     "${DHCP_ROUTER:-}"           # default gateway pushed to clients
+      DHCP_DNS:        "${DHCP_DNS:-}"              # DNS server pushed to clients
+      SERVER_HOST:     "${SERVER_HOST:-}"
+      TFTP_PORT:       "69"                         # host-side port (mapped by Docker)
+      WEBUI_PORT:      "${WEBUI_PORT:-8080}"
+    profiles:
+      - dnsmasq
+    restart: unless-stopped
+
+networks:
+  eve-net:
+    driver: bridge
+
+volumes:
+  artifacts:
+    name: eve-ipxe-artifacts
+  config:
+    name: eve-ipxe-config
+  tftp-root:
+    name: eve-ipxe-tftp

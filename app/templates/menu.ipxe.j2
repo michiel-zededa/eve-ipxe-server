@@ -1,0 +1,41 @@
+#!ipxe
+##############################################################################
+#  EVE-OS iPXE Boot Server — Configuration Menu
+#  Generated automatically; re-generated when the active config changes.
+##############################################################################
+
+echo
+echo ============================================================
+echo   EVE-OS iPXE Boot Server
+echo   Available boot configurations
+echo   Web UI: http://{{ server }}:{{ webui_port }}
+echo ============================================================
+echo
+
+{% if configs %}
+:menu
+menu EVE-OS Boot Configurations
+{% for cfg in configs %}
+item config-{{ cfg.id }} [{{ cfg.eve_version }}/{{ cfg.architecture }}/{{ cfg.hv_mode }}] {{ cfg.name }}{% if cfg.is_active %} (ACTIVE){% endif %}
+
+{% endfor %}
+item --gap
+item shell     Drop to iPXE shell
+item reboot    Reboot
+choose --default config-{{ configs[0].id }} --timeout 30000 selected
+
+{% for cfg in configs %}
+iseq ${selected} config-{{ cfg.id }} && chain http://{{ server }}:{{ webui_port }}/ipxe/config/{{ cfg.id }}/script ||
+{% endfor %}
+iseq ${selected} shell  && shell  ||
+iseq ${selected} reboot && reboot ||
+goto menu
+{% else %}
+echo No boot configurations have been created yet.
+echo
+echo Please open the web UI to create one:
+echo   http://{{ server }}:{{ webui_port }}
+echo
+prompt --key s --timeout 60 Press s for shell or wait to retry... && shell ||
+chain http://{{ server }}:{{ webui_port }}/ipxe/boot.ipxe
+{% endif %}

@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVE-OS iPXE Boot Server — ZEDEDA</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ── Topbar ─────────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a class="topbar-logo" href="#" onclick="showView('wizard'); return false;">
+      <div class="topbar-logo-mark">Z</div>
+      <div class="topbar-logo-text">
+        <span class="topbar-logo-brand">ZEDEDA</span>
+        <span class="topbar-logo-product">EVE-OS iPXE Boot Server</span>
+      </div>
+    </a>
+    <div class="topbar-divider"></div>
+    <span class="topbar-title">Network Installer</span>
+    <div class="topbar-spacer"></div>
+    <div class="server-badge" id="server-badge">
+      <div class="server-badge-dot"></div>
+      <span id="server-host-display">Loading…</span>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <span class="sidebar-section-label">Setup</span>
+
+    <a class="sidebar-item active" data-view="wizard" onclick="showView('wizard'); return false;" href="#">
+      <svg class="sidebar-item-icon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2zm5 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V2zm5 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2zM1 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V7zm5 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm5 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V7z"/>
+      </svg>
+      New Configuration
+    </a>
+
+    <a class="sidebar-item" data-view="configs" onclick="showView('configs'); return false;" href="#">
+      <svg class="sidebar-item-icon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1.5 0A1.5 1.5 0 0 0 0 1.5v2A1.5 1.5 0 0 0 1.5 5h13A1.5 1.5 0 0 0 16 3.5v-2A1.5 1.5 0 0 0 14.5 0h-13zm0 6A1.5 1.5 0 0 0 0 7.5v2A1.5 1.5 0 0 0 1.5 11h13A1.5 1.5 0 0 0 16 9.5v-2A1.5 1.5 0 0 0 14.5 6h-13zm0 6A1.5 1.5 0 0 0 0 13.5v2A1.5 1.5 0 0 0 1.5 17h13A1.5 1.5 0 0 0 16 15.5v-2A1.5 1.5 0 0 0 14.5 12h-13z"/>
+      </svg>
+      Saved Configs
+      <span class="sidebar-badge" id="config-count">0</span>
+    </a>
+
+    <span class="sidebar-section-label" style="margin-top:12px">Monitor</span>
+
+    <a class="sidebar-item" data-view="artifacts" onclick="showView('artifacts'); return false;" href="#">
+      <svg class="sidebar-item-icon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+        <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+      </svg>
+      Artifact Cache
+    </a>
+
+    <a class="sidebar-item" data-view="instructions" onclick="showView('instructions'); return false;" href="#">
+      <svg class="sidebar-item-icon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+        <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+      </svg>
+      Boot Instructions
+    </a>
+  </nav>
+
+  <!-- ── Main ───────────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VIEW: Configuration Wizard
+         ════════════════════════════════════════════════════════════════════ -->
+    <div class="view active" id="view-wizard">
+      <div class="page-header">
+        <h1>New Boot Configuration</h1>
+        <p>Set up a PXE boot environment for EVE-OS installation in a few steps.</p>
+      </div>
+
+      <!-- Wizard step indicators -->
+      <div class="wizard-steps" id="wizard-steps">
+        <div class="wizard-step active" data-step="1" onclick="goToStep(1)">
+          <div class="step-number">1</div>
+          <div class="step-info">
+            <div class="step-label">Step 1</div>
+            <div class="step-title">EVE Version</div>
+          </div>
+        </div>
+        <div class="wizard-step disabled" data-step="2" onclick="goToStep(2)">
+          <div class="step-number">2</div>
+          <div class="step-info">
+            <div class="step-label">Step 2</div>
+            <div class="step-title">Target Platform</div>
+          </div>
+        </div>
+        <div class="wizard-step disabled" data-step="3" onclick="goToStep(3)">
+          <div class="step-number">3</div>
+          <div class="step-info">
+            <div class="step-label">Step 3</div>
+            <div class="step-title">Boot Parameters</div>
+          </div>
+        </div>
+        <div class="wizard-step disabled" data-step="4" onclick="goToStep(4)">
+          <div class="step-number">4</div>
+          <div class="step-info">
+            <div class="step-label">Step 4</div>
+            <div class="step-title">Review &amp; Deploy</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 1: EVE Version ── -->
+      <div id="step-1" class="step-content">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Select EVE-OS Version</div>
+              <div class="card-subtitle">Fetching available releases from GitHub…</div>
+            </div>
+            <div class="flex gap-2">
+              <label class="flex items-center gap-2" style="font-size:12px; color:var(--text-muted); cursor:pointer;">
+                <input type="checkbox" id="show-prereleases" onchange="loadReleases()" style="width:auto; padding:0;" />
+                Include pre-releases
+              </label>
+              <button class="btn btn-ghost btn-sm" onclick="loadReleases()">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="releases-loading" class="flex items-center gap-3" style="padding:20px 0; color:var(--text-muted); font-size:13px;">
+            <div class="spinner"></div> Loading releases from GitHub…
+          </div>
+          <div id="releases-error" class="info-box error" style="display:none;">
+            <span class="info-box-icon">⚠</span>
+            <div class="info-box-content">
+              <div class="info-box-title">Failed to load releases</div>
+              <div class="info-box-body" id="releases-error-msg"></div>
+            </div>
+          </div>
+          <div id="release-grid" class="release-grid" style="display:none;"></div>
+        </div>
+
+        <div class="flex justify-between mt-4">
+          <div></div>
+          <button class="btn btn-primary" id="step1-next" onclick="goToStep(2)" disabled>
+            Continue → Platform
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Step 2: Target Platform ── -->
+      <div id="step-2" class="step-content" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Architecture &amp; Hypervisor</div>
+              <div class="card-subtitle">Choose the target hardware architecture and virtualisation mode</div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Architecture</div>
+            <div class="option-grid cols-2">
+              <div class="option-tile selected" data-arch="amd64" onclick="selectArch('amd64')">
+                <div class="option-tile-icon">🖥</div>
+                <div class="option-tile-label">x86_64 / amd64</div>
+                <div class="option-tile-desc">Intel and AMD servers, workstations, x86 edge devices</div>
+              </div>
+              <div class="option-tile" data-arch="arm64" onclick="selectArch('arm64')">
+                <div class="option-tile-icon">📱</div>
+                <div class="option-tile-label">ARM64 / aarch64</div>
+                <div class="option-tile-desc">Raspberry Pi, NVIDIA Jetson, ARM servers</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section" id="hv-section">
+            <div class="form-section-title">Hypervisor mode</div>
+            <div class="option-grid cols-2" id="hv-grid">
+              <div class="option-tile selected" data-hv="kvm" onclick="selectHV('kvm')">
+                <div class="option-tile-icon">⚡</div>
+                <div class="option-tile-label">KVM</div>
+                <div class="option-tile-desc">Hardware-accelerated virtualisation. Recommended for most deployments.</div>
+              </div>
+              <div class="option-tile" data-hv="k" onclick="selectHV('k')" id="hv-k-tile">
+                <div class="option-tile-icon">🔧</div>
+                <div class="option-tile-label">k (no-KVM)</div>
+                <div class="option-tile-desc">Bare-metal without KVM acceleration. x86_64 only.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Install scenario</div>
+            <div class="option-grid cols-3">
+              <div class="option-tile selected" data-scenario="baremetal" onclick="selectScenario('baremetal')">
+                <div class="option-tile-icon">🏭</div>
+                <div class="option-tile-label">Bare metal</div>
+                <div class="option-tile-desc">Physical server, no hypervisor layer above EVE</div>
+              </div>
+              <div class="option-tile" data-scenario="vm" onclick="selectScenario('vm')">
+                <div class="option-tile-icon">💻</div>
+                <div class="option-tile-label">Virtual Machine</div>
+                <div class="option-tile-desc">QEMU/KVM or VMware VM (dev/test)</div>
+              </div>
+              <div class="option-tile" data-scenario="edge" onclick="selectScenario('edge')">
+                <div class="option-tile-icon">🤖</div>
+                <div class="option-tile-label">Edge Device</div>
+                <div class="option-tile-desc">Raspberry Pi, NVIDIA Jetson, industrial edge hardware</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section" id="variant-section">
+            <div class="form-section-title">Hardware variant <span class="hint" style="text-transform:none; letter-spacing:0">(optional)</span></div>
+            <div class="option-grid cols-3" id="variant-grid">
+              <div class="option-tile selected" data-variant="generic" onclick="selectVariant('generic')">
+                <div class="option-tile-icon">🔲</div>
+                <div class="option-tile-label">Generic</div>
+                <div class="option-tile-desc">Standard x86 / ARM64 hardware</div>
+              </div>
+              <div class="option-tile" data-variant="nvidia-jp5" onclick="selectVariant('nvidia-jp5')" id="variant-jp5">
+                <div class="option-tile-icon">🟢</div>
+                <div class="option-tile-label">NVIDIA JetPack 5</div>
+                <div class="option-tile-desc">Jetson AGX Orin, Xavier (JP5)</div>
+              </div>
+              <div class="option-tile" data-variant="nvidia-jp6" onclick="selectVariant('nvidia-jp6')" id="variant-jp6">
+                <div class="option-tile-icon">🟩</div>
+                <div class="option-tile-label">NVIDIA JetPack 6</div>
+                <div class="option-tile-desc">Jetson Orin (JP6)</div>
+              </div>
+            </div>
+            <div class="info-box warning mt-3" id="nvidia-no-net-warning" style="display:none;">
+              <span class="info-box-icon">⚠</span>
+              <div class="info-box-content">
+                <div class="info-box-title">Network installer not available for NVIDIA variants</div>
+                <div class="info-box-body">NVIDIA JetPack variants do not ship a <code>installer-net.tar</code>. Use the raw installer image (<code>.raw</code>) and flash it via USB or SD card, then network-boot into the already-installed EVE system.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between mt-4">
+          <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+          <button class="btn btn-primary" onclick="goToStep(3)">Continue → Parameters</button>
+        </div>
+      </div>
+
+      <!-- ── Step 3: Boot Parameters ── -->
+      <div id="step-3" class="step-content" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Installation Parameters</div>
+              <div class="card-subtitle">Configure the EVE-OS installer kernel arguments</div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Configuration name</div>
+            <div class="form-group">
+              <label for="cfg-name">Config label <span class="required">*</span></label>
+              <input type="text" id="cfg-name" placeholder="e.g. Production Server A" value="Default Config" />
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Disk assignment</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="install-disk">Install disk <span class="required">*</span></label>
+                <input type="text" id="install-disk" placeholder="/dev/sda" value="/dev/sda" />
+                <span class="field-hint">Primary disk for EVE OS installation (e.g. /dev/sda, /dev/nvme0n1, /dev/mmcblk0)</span>
+              </div>
+              <div class="form-group">
+                <label for="persist-disk">Persist disk <span class="hint">optional</span></label>
+                <input type="text" id="persist-disk" placeholder="/dev/sdb" />
+                <span class="field-hint">Separate disk for persistent data. Comma-separated for multi-disk.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">ZedCloud controller</div>
+            <div class="form-grid cols-1">
+              <div class="form-group">
+                <label for="controller-url">Controller URL <span class="hint">optional</span></label>
+                <input type="url" id="controller-url" placeholder="https://zedcloud.example.com" />
+                <span class="field-hint">Leave blank to configure post-install, or for standalone/airgap deployments.</span>
+              </div>
+              <div class="form-group">
+                <label for="onboarding-key">Onboarding key <span class="hint">optional</span></label>
+                <input type="text" id="onboarding-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Device identity</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="soft-serial">Serial override <span class="hint">optional</span></label>
+                <input type="text" id="soft-serial" placeholder="Leave blank to use MAC address" />
+                <span class="field-hint">Overrides the hardware serial. Default: derived from MAC (eve_soft_serial=${mac:hexhyp})</span>
+              </div>
+              <div class="form-group">
+                <label for="console">Console</label>
+                <input type="text" id="console" placeholder="tty0 ttyS0,115200n8" value="tty0 ttyS0,115200n8" />
+                <span class="field-hint">Space-separated list of console specs (without console= prefix)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Install behaviour</div>
+            <div class="flex-col gap-2">
+              <label class="toggle-row">
+                <input type="checkbox" id="reboot-after" checked />
+                <div class="toggle-info">
+                  <div class="toggle-label">Reboot after installation</div>
+                  <div class="toggle-desc">Automatically reboot into the installed system. Uncheck to halt for disk inspection.</div>
+                </div>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="pause-before" />
+                <div class="toggle-info">
+                  <div class="toggle-label">Pause before install</div>
+                  <div class="toggle-desc">Drop to a debug shell before the installer runs. For troubleshooting only.</div>
+                </div>
+              </label>
+              <label class="toggle-row" id="nuke-row">
+                <input type="checkbox" id="nuke-disk" />
+                <div class="toggle-info">
+                  <div class="toggle-label">⚠ Nuke disk before install</div>
+                  <div class="toggle-desc">Forcibly wipe the install disk. Use with caution — all data will be lost.</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Extra kernel arguments <span class="hint" style="text-transform:none; letter-spacing:0">optional</span></div>
+            <div class="form-group">
+              <textarea id="extra-cmdline" placeholder="e.g. eve_install_debug=true linuxkit.runc_console=1"></textarea>
+              <span class="field-hint">Appended verbatim to the kernel command line. Separate arguments with spaces.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between mt-4">
+          <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+          <button class="btn btn-primary" onclick="goToStep(4)">Continue → Review</button>
+        </div>
+      </div>
+
+      <!-- ── Step 4: Review & Deploy ── -->
+      <div id="step-4" class="step-content" style="display:none;">
+        <div class="card" id="review-card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Review Configuration</div>
+              <div class="card-subtitle">Check the settings and download the installer artifacts</div>
+            </div>
+          </div>
+          <div id="review-content"></div>
+        </div>
+
+        <!-- Download progress -->
+        <div id="download-section" class="card mt-4" style="display:none;">
+          <div class="card-title" style="margin-bottom:16px">Downloading Installer Artifacts</div>
+          <div class="progress-wrap" style="margin-top:0;">
+            <div class="progress-header">
+              <span class="progress-label" id="download-label">Connecting…</span>
+              <span class="progress-pct" id="download-pct">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="download-fill" style="width:0%"></div>
+            </div>
+            <div class="progress-meta">
+              <span id="download-bytes">—</span>
+              <span id="download-status-text">pending</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generated script preview -->
+        <div id="script-preview-section" class="card mt-4" style="display:none;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Generated iPXE Boot Script</div>
+              <div class="card-subtitle" id="boot-mode-badge"></div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="copyScript()">Copy</button>
+          </div>
+          <div class="code-block">
+            <div class="code-block-header">
+              <span class="code-block-title">boot.ipxe</span>
+              <span style="font-size:11px; color:var(--text-muted);" id="script-url-label">—</span>
+            </div>
+            <pre id="script-preview-content"></pre>
+          </div>
+        </div>
+
+        <div class="flex justify-between mt-4" id="step4-actions">
+          <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary" onclick="downloadScript()" id="dl-script-btn" style="display:none;">⬇ Download .ipxe</button>
+            <button class="btn btn-primary" onclick="createAndDownload()" id="create-btn">
+              ⬇ Download Artifacts &amp; Activate
+            </button>
+            <button class="btn btn-primary" onclick="showView('instructions')" id="boot-btn" style="display:none;">
+              View Boot Instructions →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VIEW: Saved Configurations
+         ════════════════════════════════════════════════════════════════════ -->
+    <div class="view" id="view-configs">
+      <div class="page-header">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1>Saved Configurations</h1>
+            <p>Manage your EVE-OS boot configurations</p>
+          </div>
+          <button class="btn btn-primary" onclick="showView('wizard')">+ New Config</button>
+        </div>
+      </div>
+      <div id="configs-list" class="config-list"></div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VIEW: Artifact Cache
+         ════════════════════════════════════════════════════════════════════ -->
+    <div class="view" id="view-artifacts">
+      <div class="page-header">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1>Artifact Cache</h1>
+            <p>Downloaded EVE-OS installer files</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="loadArtifacts()">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="artifacts-list"></div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         VIEW: Boot Instructions
+         ════════════════════════════════════════════════════════════════════ -->
+    <div class="view" id="view-instructions">
+      <div class="page-header">
+        <h1>Network Boot Instructions</h1>
+        <p>How to point your nodes to this iPXE boot server</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px">Server Endpoints</div>
+        <table class="instructions-table">
+          <thead>
+            <tr><th>Service</th><th>Address</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Web UI</td>
+              <td><span id="instr-webui-url" class="cmd-row" style="padding:4px 10px;"><code>—</code></span></td>
+              <td>This wizard interface</td>
+            </tr>
+            <tr>
+              <td>TFTP server</td>
+              <td><span id="instr-tftp" class="cmd-row" style="padding:4px 10px;"><code>—</code></span></td>
+              <td>iPXE binaries (port 69/udp)</td>
+            </tr>
+            <tr>
+              <td>HTTP artifacts</td>
+              <td><span id="instr-http" class="cmd-row" style="padding:4px 10px;"><code>—</code></span></td>
+              <td>Kernel, initrd, installer ISO</td>
+            </tr>
+            <tr>
+              <td>iPXE boot script</td>
+              <td><span id="instr-ipxe-url" class="cmd-row" style="padding:4px 10px;"><code>—</code></span></td>
+              <td>Auto-served boot.ipxe (HTTP)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-title" style="margin-bottom:4px">Option A — dnsmasq (bundled, recommended for lab)</div>
+        <div class="card-subtitle" style="margin-bottom:16px">Start the optional dnsmasq DHCP service included in this stack</div>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-block-title">shell</span></div>
+          <pre># Enable DHCP on your network interface
+docker compose --profile dnsmasq up -d
+
+# Tune in .env before starting:
+# INTERFACE=eth0
+# DHCP_RANGE=192.168.1.100,192.168.1.200,12h
+# DHCP_ROUTER=192.168.1.1
+# SERVER_HOST=192.168.1.10</pre>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-title" style="margin-bottom:4px">Option B — Configure your existing DHCP server</div>
+        <div class="card-subtitle" style="margin-bottom:16px">ISC DHCP / dnsmasq / isc-kea pointing to this server</div>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-block-title">isc-dhcpd.conf</span></div>
+          <pre id="dhcp-config-example">next-server SERVER_HOST;      # TFTP server
+filename "undionly.kpxe";      # for BIOS PXE clients
+
+# UEFI clients:
+if substring (option vendor-class-identifier, 0, 20) = "PXEClient:Arch:00007" {
+  filename "ipxe.efi";         # x86_64 UEFI
+} elsif substring (option vendor-class-identifier, 0, 20) = "PXEClient:Arch:00011" {
+  filename "ipxe-arm64.efi";   # ARM64 UEFI
+}
+
+# Once iPXE is running, send it straight to the boot script:
+if exists user-class and option user-class = "iPXE" {
+  filename "http://SERVER_HOST:WEBUI_PORT/ipxe/boot.ipxe";
+}</pre>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-title" style="margin-bottom:4px">Option C — Quick test with QEMU</div>
+        <div class="card-subtitle" style="margin-bottom:16px">Boot a VM directly from this server (no DHCP needed)</div>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-block-title">shell</span></div>
+          <pre id="qemu-example">qemu-system-x86_64 \
+  -m 4G -smp 2 \
+  -enable-kvm \
+  -drive format=raw,file=/tmp/eve-test.img,if=virtio \
+  -netdev user,id=net0,tftp=/path/to/tftp-root,bootfile=/boot.ipxe \
+  -device virtio-net,netdev=net0 \
+  -nographic</pre>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-title" style="margin-bottom:4px">UEFI Arm64 (Raspberry Pi / Jetson)</div>
+        <div class="card-subtitle" style="margin-bottom:16px">Prerequisites for ARM64 UEFI network boot</div>
+        <div class="info-box">
+          <span class="info-box-icon">ℹ</span>
+          <div class="info-box-content">
+            <div class="info-box-title">UEFI firmware required</div>
+            <div class="info-box-body">
+              ARM64 network boot requires UEFI firmware on the device.
+              <br><br>
+              <strong>Raspberry Pi 4/5:</strong> Install the <a href="https://github.com/pftf/RPi4" target="_blank" style="color:var(--zed-orange);">Pi 4 UEFI firmware</a> on an SD card, then PXE-boot from it.
+              <br>
+              <strong>NVIDIA Jetson:</strong> Jetson Orin with JetPack 5/6 supports UEFI. Use the <code>nvidia-jp5</code> or <code>nvidia-jp6</code> variant for the raw installer.
+              <br><br>
+              DHCP option 93 (client-arch=11) identifies ARM64 UEFI clients; dnsmasq and ISC-DHCP both support it.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Toast container ──────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
