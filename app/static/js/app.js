@@ -125,10 +125,10 @@ function showView(name) {
   // Mark all elements with data-view matching this name as active
   document.querySelectorAll(`[data-view="${name}"]`).forEach(el => el.classList.add('active'));
 
-  // BUG 3 fix: always clear currentConfigDbId when navigating to wizard
-  // (whether or not wizardInProgress — user intent is to start fresh)
+  // When navigating to wizard and no download is in progress, always start
+  // fresh — reset all wizard state and form fields to defaults.
   if (name === 'wizard' && !state.wizardInProgress) {
-    state.currentConfigDbId = null;
+    resetWizard();
   }
 
   if (name === 'configs')      loadConfigs();
@@ -964,6 +964,25 @@ function resetWizard() {
 
   // Clear selected release card
   document.querySelectorAll('.release-card').forEach(c => c.classList.remove('selected'));
+
+  // Reset all form fields to their defaults
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  setVal('cfg-name',       '');
+  setVal('install-disk',   '/dev/sda');
+  setVal('persist-disk',   '');
+  setVal('controller-url', '');
+  setVal('onboarding-key', '');
+  setVal('soft-serial',    '');
+  setVal('console',        'tty0 ttyS0,115200n8');
+  setVal('extra-cmdline',  '');
+  setChk('reboot-after',   true);
+  setChk('nuke-disk',      false);
+  setChk('pause-before',   false);
+
+  // Reset script preview section
+  document.getElementById('script-preview-section') &&
+    (document.getElementById('script-preview-section').style.display = 'none');
 
   // Reset download section UI
   document.getElementById('step1-next') && (document.getElementById('step1-next').disabled = true);
