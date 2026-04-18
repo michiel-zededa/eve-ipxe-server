@@ -533,17 +533,15 @@
 
       <div class="card mt-4">
         <div class="card-title" style="margin-bottom:4px">Option A — dnsmasq (bundled, recommended for lab)</div>
-        <div class="card-subtitle" style="margin-bottom:16px">Start the optional dnsmasq DHCP service included in this stack</div>
-        <div class="code-block">
-          <div class="code-block-header"><span class="code-block-title">shell</span></div>
-          <pre># Enable DHCP on your network interface
-docker compose --profile dnsmasq up -d
-
-# Tune in .env before starting:
-# INTERFACE=eth0
-# DHCP_RANGE=192.168.1.100,192.168.1.200,12h
-# DHCP_ROUTER=192.168.1.1
-# SERVER_HOST=192.168.1.10</pre>
+        <div class="card-subtitle" style="margin-bottom:16px">Built-in DHCP server managed from the sidebar</div>
+        <div class="info-box">
+          <span class="info-box-icon">ℹ</span>
+          <div class="info-box-content">
+            <div class="info-box-title">Configure from the DHCP Server section</div>
+            <div class="info-box-body">
+              Open <strong>DHCP Server</strong> in the sidebar, fill in the network interface, IP range, gateway, and DNS server, then click <strong>Save Settings</strong> followed by <strong>▶ Start DHCP</strong>. No command-line or config file editing required.
+            </div>
+          </div>
         </div>
       </div>
 
