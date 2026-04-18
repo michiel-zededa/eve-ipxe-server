@@ -235,7 +235,7 @@ The wizard automatically disables the `k` option when a pre-16.x release is sele
 
 Test the full PXE boot flow locally without physical hardware.
 
-In the wizard select **QEMU / KVM guest** as the scenario — the install disk field will automatically default to `/dev/vda` (VirtIO block device, the QEMU default). Use `/dev/hda` if you attach the drive with `-drive ...,if=ide` and `/dev/sda` for `-drive ...,if=scsi`.
+In the wizard select **QEMU / KVM guest** as the scenario — the install disk field will automatically default to `/dev/vda` (VirtIO block device, the QEMU default with `-drive if=virtio`). Use `/dev/sda` if you attach the drive as SATA or SCSI instead. Note: `/dev/hda` (old IDE naming) is not used by modern Linux kernels — both SATA and SCSI appear as `/dev/sda`.
 
 ```bash
 # Create a test disk

@@ -302,7 +302,7 @@ function selectScenario(s) {
       diskEl.value = '/dev/vda';
     }
     if (diskHint) diskHint.textContent =
-      'VirtIO drive (default). Use /dev/hda for virtual SATA or /dev/sda for virtual SCSI.';
+      'VirtIO block device (QEMU default). Use /dev/sda for SATA or SCSI virtual drives.';
   } else {
     if (diskEl && diskEl.value === '/dev/vda') {
       diskEl.value = '/dev/sda';
