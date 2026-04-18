@@ -1079,29 +1079,48 @@ function _renderDHCPStatus(data) {
   const stopBtn  = document.getElementById('dhcp-stop-btn');
 
   if (!data.available) {
-    dot.style.background   = 'var(--danger)';
+    dot.style.background   = '#ef4444';
     label.textContent      = 'Unavailable';
-    sub.textContent        = data.error || 'Docker socket not accessible';
+    sub.innerHTML = `Docker socket not accessible &mdash; restart the stack to apply the updated compose file:<br>
+      <code style="font-size:11px; opacity:.8;">./server.sh stop &amp;&amp; ./server.sh start</code>`;
     startBtn.style.display = 'none';
     stopBtn.style.display  = 'none';
     return;
   }
 
-  if (data.running) {
+  if (data.status === 'not_found') {
+    dot.style.background   = '#f59e0b';
+    label.textContent      = 'Not found';
+    sub.textContent        = 'dnsmasq container not found — is the stack running?';
+    startBtn.style.display = 'none';
+    stopBtn.style.display  = 'none';
+    return;
+  }
+
+  if (data.running && data.configured) {
+    // Container running with a saved config — DHCP is actively serving
     dot.style.background   = '#22c55e';
-    label.textContent      = 'Running';
+    label.textContent      = 'Active';
     sub.textContent        = data.started_at
       ? 'Started ' + new Date(data.started_at).toLocaleString()
       : '';
     startBtn.style.display = 'none';
     stopBtn.style.display  = '';
+  } else if (data.running && !data.configured) {
+    // Container running in idle mode — no DHCP config written yet
+    dot.style.background   = '#f59e0b';
+    label.textContent      = 'Idle';
+    sub.textContent        = 'Not configured — fill in settings below and click ↺ Apply & Restart';
+    startBtn.style.display = 'none';
+    stopBtn.style.display  = '';
   } else {
+    // Container stopped
     dot.style.background   = 'var(--text-muted)';
     label.textContent      = 'Stopped';
     sub.textContent        = data.finished_at && data.finished_at !== '0001-01-01T00:00:00Z'
       ? 'Stopped ' + new Date(data.finished_at).toLocaleString()
       : '';
-    startBtn.style.display = '';
+    startBtn.style.display = data.configured ? '' : 'none';
     stopBtn.style.display  = 'none';
   }
 }

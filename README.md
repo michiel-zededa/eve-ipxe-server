@@ -129,8 +129,8 @@ The server auto-detects which mode applies based on what's inside the downloaded
 
 ### Option A — Bundled dnsmasq (recommended for lab environments)
 
-The DHCP server (dnsmasq) is controlled from the web UI. After starting the stack with
-`./server.sh start`, open the **DHCP Server** section in the sidebar and configure:
+The dnsmasq container starts automatically with the stack in **idle mode** (not listening for
+DHCP). To activate it, open the **DHCP Server** section in the sidebar and configure:
 
 | Setting | Example | Description |
 |---------|---------|-------------|
@@ -140,10 +140,11 @@ The DHCP server (dnsmasq) is controlled from the web UI. After starting the stac
 | DNS Server | `8.8.8.8` | DNS IP pushed to clients (optional) |
 | TFTP / HTTP Server IP | `192.168.1.10` | This server's LAN IP (auto-detected if blank) |
 
-Click **Save Settings** then **▶ Start DHCP** to activate. Settings are persisted to the config
-volume (`/data/config/dhcp-settings.json`) and a `dnsmasq.conf` is generated automatically.
+Click **↺ Apply & Restart** to write the config and restart dnsmasq with it. The status badge
+changes from **Idle** (amber) to **Active** (green). Settings are persisted in the config
+volume (`/data/config/dhcp-settings.json`) so they survive container and stack restarts.
 
-The dnsmasq container requires `network_mode: host` so it can receive DHCP broadcast packets.
+The dnsmasq container uses `network_mode: host` so it can receive DHCP broadcast packets.
 It handles BIOS PXE (DHCP options 66/67), UEFI amd64 (arch 7), and UEFI ARM64 (arch 11).
 
 ### Option B — Configure your existing DHCP server

@@ -117,11 +117,13 @@ log-dhcp
 
 async def get_container_status() -> dict:
     """Query the Docker Engine API for the dnsmasq container state."""
+    conf_exists = _dnsmasq_conf_path().exists()
     try:
         async with _docker_client() as client:
             resp = await client.get(f"/containers/{CONTAINER_NAME}/json")
             if resp.status_code == 404:
                 return {"available": False, "running": False, "status": "not_found",
+                        "configured": conf_exists,
                         "error": "Container not found — ensure docker-compose includes the dnsmasq service"}
             resp.raise_for_status()
             data  = resp.json()
@@ -130,20 +132,29 @@ async def get_container_status() -> dict:
                 "available":   True,
                 "running":     state.get("Running", False),
                 "status":      state.get("Status", "unknown"),
+                "configured":  conf_exists,
                 "started_at":  state.get("StartedAt"),
                 "finished_at": state.get("FinishedAt"),
             }
     except httpx.TransportError:
         return {"available": False, "running": False, "status": "error",
+                "configured": conf_exists,
                 "error": "Docker socket not accessible — is /var/run/docker.sock mounted?"}
     except Exception as exc:
         logger.warning("Docker API error: %s", exc)
-        return {"available": False, "running": False, "status": "error", "error": str(exc)}
+        return {"available": False, "running": False, "status": "error",
+                "configured": conf_exists, "error": str(exc)}
 
 
 async def start_container() -> None:
+    """Start (or restart if idle) the dnsmasq container so it picks up the current config."""
     async with _docker_client() as client:
-        resp = await client.post(f"/containers/{CONTAINER_NAME}/start")
+        # Check current state — if already running in idle mode, restart to pick up new config
+        info = await client.get(f"/containers/{CONTAINER_NAME}/json")
+        if info.status_code == 200 and info.json().get("State", {}).get("Running"):
+            resp = await client.post(f"/containers/{CONTAINER_NAME}/restart", params={"t": 5})
+        else:
+            resp = await client.post(f"/containers/{CONTAINER_NAME}/start")
         if resp.status_code not in (204, 304):
             raise RuntimeError(f"Docker API returned {resp.status_code}: {resp.text}")
 

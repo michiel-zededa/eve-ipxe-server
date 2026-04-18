@@ -13,12 +13,12 @@ fi
 
 # ── No config file — check if DHCP_RANGE is set ───────────────────────────────
 if [[ -z "${DHCP_RANGE:-}" ]]; then
-    echo "=== EVE-OS iPXE dnsmasq DHCP service ==="
-    echo "INFO: No DHCP configuration found."
-    echo "      Configure and start DHCP from the web UI, or set DHCP_RANGE in .env"
-    echo "      and restart the container."
-    echo "Exiting cleanly — container will not restart (restart: no)."
-    exit 0
+    echo "=== EVE-OS iPXE dnsmasq DHCP service — idle mode ==="
+    echo "INFO: No DHCP configuration found yet."
+    echo "      Open the DHCP Server section in the web UI, fill in the"
+    echo "      network settings, and click 'Apply & Restart' to activate."
+    echo "Waiting for configuration..."
+    exec sleep infinity
 fi
 
 # ── Resolve SERVER_HOST ────────────────────────────────────────────────────────
