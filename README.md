@@ -24,7 +24,7 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 | amd64 bare metal or hypervisor | amd64 | k ¹ | generic |
 | amd64 bare metal or hypervisor (with VM acceleration) | amd64 | kvm | generic |
 | ARM64 bare metal or hypervisor | arm64 | kvm | generic |
-| Raspberry Pi 4/5 (UEFI) | arm64 | kvm | generic |
+| Raspberry Pi 4 (UEFI) | arm64 | kvm | generic |
 | NVIDIA Jetson (JetPack 5) | arm64 | kvm | nvidia-jp5 |
 | NVIDIA Jetson (JetPack 6) | arm64 | kvm | nvidia-jp6 |
 
@@ -203,7 +203,7 @@ dhcp-boot=tag:ipxe,http://192.168.1.10:8080/ipxe/boot.ipxe
 
 ## Architecture-Specific Notes
 
-### ARM64 — Raspberry Pi 4/5
+### ARM64 — Raspberry Pi 4
 
 Raspberry Pi requires UEFI firmware for network boot:
 
