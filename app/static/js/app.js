@@ -845,6 +845,9 @@ function resetWizard() {
   const defaultHv   = document.querySelector('.option-tile[data-hv="kvm"]');
   if (defaultArch) defaultArch.classList.add('selected');
   if (defaultHv)   defaultHv.classList.add('selected');
+  // NVIDIA variants are arm64-only — hide them when resetting to amd64 default
+  document.getElementById('variant-jp5').style.display = 'none';
+  document.getElementById('variant-jp6').style.display = 'none';
 
   // Clear selected release card
   document.querySelectorAll('.release-card').forEach(c => c.classList.remove('selected'));
@@ -863,27 +866,6 @@ function resetWizard() {
   goToStep(1);
 }
 
-// ── Server shutdown ───────────────────────────────────────────────────────────
-async function stopServer() {
-  const msg = 'Stop the entire server stack?\n\nThis will shut down all containers (webui, nginx, and optionally dnsmasq).\nThe web UI will become unreachable immediately.';
-  if (!confirm(msg)) return;
-
-  const btn = document.getElementById('stop-server-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stopping…';
-
-  try {
-    await api('/api/admin/shutdown', 'POST');
-    btn.innerHTML = '🔴 Server stopped';
-    toast('Server is shutting down — containers will stop momentarily.', 'success');
-  } catch (err) {
-    // 503 means the Docker socket isn't available — surface the message
-    toast('Cannot stop: ' + err.message, 'error');
-    btn.disabled = false;
-    btn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13"><rect x="3" y="3" width="10" height="10" rx="1"/></svg> Stop';
-  }
-}
-
 // ── Utilities ────────────────────────────────────────────────────────────────
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: {} };
@@ -895,8 +877,20 @@ async function api(path, method = 'GET', body = null) {
   if (res.status === 204) return null;
   const data = await res.json();
   if (!res.ok) {
-    const msg = data?.detail || `HTTP ${res.status}`;
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    const detail = data?.detail;
+    let msg;
+    if (typeof detail === 'string') {
+      msg = detail;
+    } else if (Array.isArray(detail)) {
+      // Pydantic validation errors — extract the human-readable msg from each item
+      msg = detail.map(e => {
+        const field = e.loc ? e.loc.filter(l => l !== 'body').join('.') : '';
+        return field ? `${field}: ${e.msg}` : e.msg;
+      }).join('\n');
+    } else {
+      msg = `HTTP ${res.status}`;
+    }
+    throw new Error(msg);
   }
   return data;
 }

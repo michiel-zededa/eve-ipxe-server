@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import init_db, get_session_factory
 from app.models import BootConfig, DownloadStatus
-from app.routers import releases, configuration, artifacts, ipxe, admin
+from app.routers import releases, configuration, artifacts, ipxe
 from app.services import artifact_manager, tftp_server, ipxe_generator
 
 logging.basicConfig(
@@ -133,7 +133,6 @@ app.include_router(releases.router)
 app.include_router(configuration.router)
 app.include_router(artifacts.router)
 app.include_router(ipxe.router)
-app.include_router(admin.router)
 
 # ── Static files (web UI) ──────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"

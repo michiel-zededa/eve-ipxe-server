@@ -180,6 +180,9 @@ class BootConfigCreate(BaseModel):
         if v is None or v.strip() == "":
             return None
         v = v.strip()
+        # Auto-fix common single-slash typo: https:/foo → https://foo
+        import re
+        v = re.sub(r'^(https?:/)(?!/)', r'\1/', v)
         if not (v.startswith("https://") or v.startswith("http://")):
             raise ValueError("Controller URL must start with https:// or http://")
         return v

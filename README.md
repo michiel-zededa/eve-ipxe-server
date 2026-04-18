@@ -41,8 +41,6 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 - Host port **69/udp** (TFTP), **8080/tcp** (Web UI), **8081/tcp** (nginx artifacts) available
 - For the optional DHCP service: the host must be on the same L2 segment as the nodes being booted
 
-> **Note:** The webui container runs as root (`user: "0"` in `docker-compose.yml`) so it can access the Docker socket and power the **Stop Server** button. Remove the `user: "0"` line and the socket mount if you prefer a non-root container — the Stop button will then show a 503 and you can use `./server.sh stop` instead.
-
 ---
 
 ## Quick Start
@@ -348,11 +346,6 @@ Key endpoints:
 | `GET` | `/ipxe/boot.ipxe` | Serve the active boot script (TFTP chainload target) |
 | `GET` | `/ipxe/config/{id}/script` | Config-specific boot script |
 
-**Admin**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/admin/shutdown` | Stop all stack containers gracefully (requires Docker socket mount) |
 
 ---
 
@@ -399,21 +392,13 @@ See `.env.example` for the full list. Key variables:
 - The `ipxe-arm64.efi` binary must be present in the TFTP root — check the Artifact Cache view
 - Verify your DHCP server sends `filename "ipxe-arm64.efi"` for arch=11 clients
 
-**Stop Server button shows "Docker socket not mounted" error**
-- The stack must be fully restarted after the docker socket mount was added to `docker-compose.yml`:
-  ```bash
-  ./server.sh stop && ./server.sh start
-  ```
-- If the error persists, verify `/var/run/docker.sock` exists on the host (`ls -la /var/run/docker.sock`)
-- As a fallback, always use `./server.sh stop` on the host
-
 ---
 
 ## Project Structure
 
 ```
 eve-ipxe-server/
-├── docker-compose.yml          # Service definitions (includes Docker socket mount)
+├── docker-compose.yml          # Service definitions
 ├── Dockerfile                  # webui image (FastAPI + TFTP)
 ├── server.sh                   # Stack management: start / stop / restart / status / logs
 ├── requirements.txt
@@ -432,8 +417,7 @@ eve-ipxe-server/
     │   ├── releases.py         # GitHub API proxy
     │   ├── configuration.py    # Boot config CRUD
     │   ├── artifacts.py        # Download mgmt + SSE progress
-    │   ├── ipxe.py             # iPXE script serving
-    │   └── admin.py            # Shutdown endpoint (POST /api/admin/shutdown)
+    │   └── ipxe.py             # iPXE script serving
     ├── services/
     │   ├── github_client.py    # GitHub releases API client
     │   ├── artifact_manager.py # Download, extract, grub.cfg patch

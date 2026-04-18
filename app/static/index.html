@@ -52,10 +52,6 @@
       <div class="server-badge-dot"></div>
       <span id="server-host-display">Loading…</span>
     </div>
-    <button class="topbar-stop-btn" id="stop-server-btn" onclick="stopServer()" title="Stop all server containers (compose down)">
-      <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-      Stop
-    </button>
   </header>
 
   <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
@@ -259,12 +255,12 @@
                 <div class="option-tile-label">Generic</div>
                 <div class="option-tile-desc">Standard amd64 / ARM64 hardware</div>
               </div>
-              <div class="option-tile" data-variant="nvidia-jp5" onclick="selectVariant('nvidia-jp5')" id="variant-jp5">
+              <div class="option-tile" data-variant="nvidia-jp5" onclick="selectVariant('nvidia-jp5')" id="variant-jp5" style="display:none;">
                 <div class="option-tile-icon">🟢</div>
                 <div class="option-tile-label">NVIDIA JetPack 5</div>
                 <div class="option-tile-desc">Jetson AGX Orin, Xavier (JP5)</div>
               </div>
-              <div class="option-tile" data-variant="nvidia-jp6" onclick="selectVariant('nvidia-jp6')" id="variant-jp6">
+              <div class="option-tile" data-variant="nvidia-jp6" onclick="selectVariant('nvidia-jp6')" id="variant-jp6" style="display:none;">
                 <div class="option-tile-icon">🟩</div>
                 <div class="option-tile-label">NVIDIA JetPack 6</div>
                 <div class="option-tile-desc">Jetson Orin (JP6)</div>

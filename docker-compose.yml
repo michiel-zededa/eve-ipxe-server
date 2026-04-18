@@ -14,17 +14,10 @@ services:
       # This avoids needing CAP_NET_BIND_SERVICE for privileged port 69 inside
       # the container while still exposing the standard TFTP port on the host.
       - "${BIND_ADDRESS:-0.0.0.0}:69:6969/udp"
-    # Run as root so the Docker socket is accessible (this is a lab tool).
-    # The docker socket is owned by root:docker; appuser (UID 1001) cannot
-    # reach it, so we override the Dockerfile USER here.
-    user: "0"
     volumes:
       - artifacts:/data/artifacts
       - config:/data/config
       - tftp-root:/data/tftp
-      # Mount the Docker socket to enable the "Stop Server" button in the web UI.
-      # Remove this line if you prefer not to give the container Docker API access.
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
       WEBUI_PORT:        "8080"
