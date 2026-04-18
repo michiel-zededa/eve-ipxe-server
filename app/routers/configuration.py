@@ -196,6 +196,33 @@ async def activate_config(config_id: str, db: AsyncSession = Depends(get_db)):
     return _to_response(cfg)
 
 
+@router.post("/{config_id}/deactivate", response_model=BootConfigResponse)
+async def deactivate_config(config_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Deactivate the given configuration and remove the TFTP boot.ipxe script.
+    After deactivation, PXE clients will receive a 'file not found' from TFTP.
+    """
+    cfg = await _get_or_404(db, config_id)
+
+    if not cfg.is_active:
+        raise HTTPException(status_code=409, detail="Configuration is not currently active")
+
+    cfg.is_active = False
+    await db.flush()
+    await db.refresh(cfg)
+
+    # Remove boot.ipxe from the TFTP root so PXE clients stop booting
+    from app.config import get_settings
+    boot_script = get_settings().tftp_root / "boot.ipxe"
+    try:
+        boot_script.unlink(missing_ok=True)
+        logger.info("Removed TFTP boot.ipxe (config %s deactivated)", config_id)
+    except OSError as exc:
+        logger.warning("Could not remove boot.ipxe: %s", exc)
+
+    return _to_response(cfg)
+
+
 @router.get("/{config_id}/script")
 async def preview_script(config_id: str, db: AsyncSession = Depends(get_db)):
     """Preview the generated iPXE script without activating it."""

@@ -62,11 +62,57 @@ async function loadServerInfo() {
 }
 
 // ── View switching ───────────────────────────────────────────────────────────
+
+// Lightweight interval that keeps the wizard progress bar updated when the
+// user navigates away from the wizard mid-download and then comes back.
+let _uiRefreshInterval = null;
+
+function _startUIRefresh() {
+  if (_uiRefreshInterval) return;
+  const v  = state.selectedVersion;
+  const a  = state.selectedArch;
+  const h  = state.selectedHV;
+  const va = state.selectedVariant;
+  if (!v) return;
+
+  // Fetch once immediately so the bar un-freezes the moment the user returns
+  api(`/api/artifacts/status/${encodeURIComponent(v)}/${a}/${h}/${va}`)
+    .then(data => updateDownloadUI(data))
+    .catch(() => {});
+
+  _uiRefreshInterval = setInterval(async () => {
+    if (!state.wizardInProgress) {
+      _stopUIRefresh();
+      return;
+    }
+    try {
+      const data = await api(`/api/artifacts/status/${encodeURIComponent(v)}/${a}/${h}/${va}`);
+      updateDownloadUI(data);
+      if (data.status === 'ready' || data.status === 'failed') {
+        _stopUIRefresh();
+      }
+    } catch (_) {}
+  }, 1000);
+}
+
+function _stopUIRefresh() {
+  if (_uiRefreshInterval) {
+    clearInterval(_uiRefreshInterval);
+    _uiRefreshInterval = null;
+  }
+}
+
 function showView(name) {
-  // Close any open SSE stream when navigating away
-  if (state.downloadEventSource) {
+  // Close any open SSE stream when navigating away from wizard
+  if (name !== 'wizard' && state.downloadEventSource) {
     state.downloadEventSource.close();
     state.downloadEventSource = null;
+  }
+  // Stop the UI-refresh poll when leaving wizard; start it when returning
+  if (name !== 'wizard') {
+    _stopUIRefresh();
+  } else if (state.wizardInProgress) {
+    _startUIRefresh();
   }
 
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -706,6 +752,14 @@ function renderConfigs(configs) {
       actions.appendChild(activateBtn);
     }
 
+    if (c.is_active) {
+      const deactivateBtn = document.createElement('button');
+      deactivateBtn.className = 'btn btn-secondary btn-sm';
+      deactivateBtn.textContent = 'Deactivate';
+      deactivateBtn.addEventListener('click', () => deactivateConfig(c.id));
+      actions.appendChild(deactivateBtn);
+    }
+
     if (!['ready', 'downloading', 'extracting'].includes(c.download_status)) {
       const dlBtn = document.createElement('button');
       dlBtn.className = 'btn btn-secondary btn-sm';
@@ -730,6 +784,17 @@ async function activateConfig(id) {
   try {
     await api(`/api/configs/${id}/activate`, 'POST');
     toast('Configuration activated', 'success');
+    await loadConfigs();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function deactivateConfig(id) {
+  if (!confirm('Deactivate this configuration? PXE clients will no longer receive a boot script.')) return;
+  try {
+    await api(`/api/configs/${id}/deactivate`, 'POST');
+    toast('Configuration deactivated — boot.ipxe removed from TFTP', 'success');
     await loadConfigs();
   } catch (e) {
     toast('Error: ' + e.message, 'error');
@@ -858,11 +923,12 @@ async function deleteArtifacts(version, combo) {
 
 // ── Wizard reset ─────────────────────────────────────────────────────────────
 function resetWizard() {
-  // Close any in-flight SSE stream
+  // Close any in-flight SSE stream and UI-refresh poll
   if (state.downloadEventSource) {
     state.downloadEventSource.close();
     state.downloadEventSource = null;
   }
+  _stopUIRefresh();
 
   // Reset all state fields
   state.currentConfigDbId = null;

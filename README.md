@@ -331,6 +331,7 @@ Key endpoints:
 | `PUT` | `/api/configs/{id}` | Update a configuration |
 | `DELETE` | `/api/configs/{id}` | Delete a configuration |
 | `POST` | `/api/configs/{id}/activate` | Activate a config (writes boot.ipxe to TFTP) |
+| `POST` | `/api/configs/{id}/deactivate` | Deactivate a config (removes boot.ipxe from TFTP) |
 | `GET` | `/api/configs/{id}/script` | Preview the generated iPXE script (no file write) |
 
 **Artifacts**
