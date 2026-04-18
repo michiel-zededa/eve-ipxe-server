@@ -133,6 +133,7 @@ function showView(name) {
 
   if (name === 'configs')      loadConfigs();
   if (name === 'artifacts')    loadArtifacts();
+  if (name === 'dhcp')         loadDHCPStatus();
 }
 
 // ── Wizard step navigation ───────────────────────────────────────────────────
@@ -1058,4 +1059,122 @@ function toast(msg, type = 'info') {
     el.style.transition = 'opacity 0.3s';
     setTimeout(() => el.remove(), 300);
   }, 4000);
+}
+
+// ── DHCP Server management ───────────────────────────────────────────────────
+async function loadDHCPStatus() {
+  try {
+    const data = await api('/api/dhcp/status');
+    _renderDHCPStatus(data);
+    _populateDHCPSettings(data.settings || {});
+  } catch (e) {
+    document.getElementById('dhcp-status-label').textContent = 'Error loading status';
+    document.getElementById('dhcp-status-sub').textContent   = e.message;
+  }
+}
+
+function _renderDHCPStatus(data) {
+  const dot      = document.getElementById('dhcp-status-dot');
+  const label    = document.getElementById('dhcp-status-label');
+  const sub      = document.getElementById('dhcp-status-sub');
+  const startBtn = document.getElementById('dhcp-start-btn');
+  const stopBtn  = document.getElementById('dhcp-stop-btn');
+
+  if (!data.available) {
+    dot.style.background   = 'var(--danger)';
+    label.textContent      = 'Unavailable';
+    sub.textContent        = data.error || 'Docker socket not accessible';
+    startBtn.style.display = 'none';
+    stopBtn.style.display  = 'none';
+    return;
+  }
+
+  if (data.running) {
+    dot.style.background   = '#22c55e';
+    label.textContent      = 'Running';
+    sub.textContent        = data.started_at
+      ? 'Started ' + new Date(data.started_at).toLocaleString()
+      : '';
+    startBtn.style.display = 'none';
+    stopBtn.style.display  = '';
+  } else {
+    dot.style.background   = 'var(--text-muted)';
+    label.textContent      = 'Stopped';
+    sub.textContent        = data.finished_at && data.finished_at !== '0001-01-01T00:00:00Z'
+      ? 'Stopped ' + new Date(data.finished_at).toLocaleString()
+      : '';
+    startBtn.style.display = '';
+    stopBtn.style.display  = 'none';
+  }
+}
+
+function _populateDHCPSettings(s) {
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  setVal('dhcp-interface',   s.interface);
+  setVal('dhcp-range',       s.dhcp_range);
+  setVal('dhcp-router',      s.dhcp_router);
+  setVal('dhcp-dns',         s.dhcp_dns);
+  setVal('dhcp-server-host', s.server_host);
+}
+
+function _collectDHCPSettings() {
+  return {
+    interface:   document.getElementById('dhcp-interface')?.value?.trim()   || 'eth0',
+    dhcp_range:  document.getElementById('dhcp-range')?.value?.trim()        || '192.168.1.100,192.168.1.200,12h',
+    dhcp_router: document.getElementById('dhcp-router')?.value?.trim()       || null,
+    dhcp_dns:    document.getElementById('dhcp-dns')?.value?.trim()          || null,
+    server_host: document.getElementById('dhcp-server-host')?.value?.trim()  || null,
+  };
+}
+
+async function dhcpStart() {
+  const btn = document.getElementById('dhcp-start-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  try {
+    const res = await api('/api/dhcp/start', 'POST');
+    toast(res.message || 'DHCP server started', 'success');
+    await loadDHCPStatus();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Start DHCP';
+  }
+}
+
+async function dhcpStop() {
+  if (!confirm('Stop the DHCP server? PXE clients will no longer receive IP addresses from this server.')) return;
+  const btn = document.getElementById('dhcp-stop-btn');
+  btn.disabled = true;
+  btn.textContent = 'Stopping…';
+  try {
+    const res = await api('/api/dhcp/stop', 'POST');
+    toast(res.message || 'DHCP server stopped', 'success');
+    await loadDHCPStatus();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '■ Stop DHCP';
+  }
+}
+
+async function dhcpSaveSettings() {
+  try {
+    await api('/api/dhcp/config', 'PUT', _collectDHCPSettings());
+    toast('Settings saved', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function dhcpApplyRestart() {
+  try {
+    const res = await api('/api/dhcp/apply', 'POST', _collectDHCPSettings());
+    toast(res.message || 'Applied', 'success');
+    await loadDHCPStatus();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
 }

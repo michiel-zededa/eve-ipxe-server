@@ -72,7 +72,8 @@ The included `server.sh` script manages the stack:
 ./server.sh build           # rebuild images after a code change
 ./server.sh clean           # stop containers and wipe ALL persistent data (volumes)
 
-PROFILES=dnsmasq ./server.sh start   # also start the optional DHCP service
+# The DHCP server (dnsmasq) is managed from the web UI — configure and
+# start it from the "DHCP Server" section in the sidebar.
 ```
 
 Follow the 4-step wizard:
@@ -128,16 +129,19 @@ The server auto-detects which mode applies based on what's inside the downloaded
 
 ### Option A — Bundled dnsmasq (recommended for lab environments)
 
-```bash
-# Edit .env:
-INTERFACE=eth0
-DHCP_RANGE=192.168.1.100,192.168.1.200,12h
-DHCP_ROUTER=192.168.1.1
-DHCP_DNS=8.8.8.8
-SERVER_HOST=192.168.1.10
+The DHCP server (dnsmasq) is controlled from the web UI. After starting the stack with
+`./server.sh start`, open the **DHCP Server** section in the sidebar and configure:
 
-docker compose --profile dnsmasq up -d
-```
+| Setting | Example | Description |
+|---------|---------|-------------|
+| Network Interface | `eth0` | Host interface to bind for DHCP broadcasts |
+| DHCP Range | `192.168.1.100,192.168.1.200,12h` | IP pool and lease time |
+| Default Gateway | `192.168.1.1` | Router IP pushed to clients (optional) |
+| DNS Server | `8.8.8.8` | DNS IP pushed to clients (optional) |
+| TFTP / HTTP Server IP | `192.168.1.10` | This server's LAN IP (auto-detected if blank) |
+
+Click **Save Settings** then **▶ Start DHCP** to activate. Settings are persisted to the config
+volume (`/data/config/dhcp-settings.json`) and a `dnsmasq.conf` is generated automatically.
 
 The dnsmasq container requires `network_mode: host` so it can receive DHCP broadcast packets.
 It handles BIOS PXE (DHCP options 66/67), UEFI amd64 (arch 7), and UEFI ARM64 (arch 11).
@@ -352,6 +356,16 @@ Key endpoints:
 | `GET` | `/ipxe/boot.ipxe` | Serve the active boot script (TFTP chainload target) |
 | `GET` | `/ipxe/config/{id}/script` | Config-specific boot script |
 
+**DHCP server**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/dhcp/status` | Container state + current settings |
+| `POST` | `/api/dhcp/start` | Start the dnsmasq container |
+| `POST` | `/api/dhcp/stop` | Stop the dnsmasq container |
+| `GET` | `/api/dhcp/config` | Get DHCP settings |
+| `PUT` | `/api/dhcp/config` | Save DHCP settings (does not restart) |
+| `POST` | `/api/dhcp/apply` | Save settings and restart if running |
 
 ---
 

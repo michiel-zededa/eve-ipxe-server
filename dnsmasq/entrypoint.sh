@@ -3,6 +3,24 @@
 # variables and starts the daemon in the foreground.
 set -euo pipefail
 
+# ── Check for web-UI managed config ───────────────────────────────────────────
+MANAGED_CONF="/data/config/dnsmasq.conf"
+if [[ -f "${MANAGED_CONF}" ]]; then
+    echo "=== EVE-OS iPXE dnsmasq DHCP service (managed config) ==="
+    echo "Using configuration from ${MANAGED_CONF}"
+    exec dnsmasq --conf-file="${MANAGED_CONF}" --no-daemon --log-facility=- "$@"
+fi
+
+# ── No config file — check if DHCP_RANGE is set ───────────────────────────────
+if [[ -z "${DHCP_RANGE:-}" ]]; then
+    echo "=== EVE-OS iPXE dnsmasq DHCP service ==="
+    echo "INFO: No DHCP configuration found."
+    echo "      Configure and start DHCP from the web UI, or set DHCP_RANGE in .env"
+    echo "      and restart the container."
+    echo "Exiting cleanly — container will not restart (restart: no)."
+    exit 0
+fi
+
 # ── Resolve SERVER_HOST ────────────────────────────────────────────────────────
 if [[ -z "${SERVER_HOST:-}" ]]; then
     SERVER_HOST=$(ip -4 route get 1.1.1.1 2>/dev/null \

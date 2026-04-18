@@ -18,6 +18,7 @@ services:
       - artifacts:/data/artifacts
       - config:/data/config
       - tftp-root:/data/tftp
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
       WEBUI_PORT:        "8080"
@@ -65,8 +66,9 @@ services:
       retries: 3
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # dnsmasq  — optional lightweight DHCP+TFTP-proxy server.
-  #             Enable with:  docker compose --profile dnsmasq up
+  # dnsmasq  — lightweight DHCP+PXE-proxy server.
+  #             Controlled from the web UI (DHCP Server section in sidebar).
+  #             Exits cleanly on startup if no config has been saved yet.
   #             Requires host networking for DHCP broadcast to work.
   # ─────────────────────────────────────────────────────────────────────────────
   dnsmasq:
@@ -82,16 +84,14 @@ services:
     volumes:
       - config:/data/config:ro
     environment:
-      INTERFACE:       "${INTERFACE:-eth0}"
-      DHCP_RANGE:      "${DHCP_RANGE:-192.168.1.100,192.168.1.200,12h}"
+      INTERFACE:       "${INTERFACE:-}"
+      DHCP_RANGE:      "${DHCP_RANGE:-}"
       DHCP_ROUTER:     "${DHCP_ROUTER:-}"           # default gateway pushed to clients
       DHCP_DNS:        "${DHCP_DNS:-}"              # DNS server pushed to clients
       SERVER_HOST:     "${SERVER_HOST:-}"
       TFTP_PORT:       "69"                         # host-side port (mapped by Docker)
       WEBUI_PORT:      "${WEBUI_PORT:-8080}"
-    profiles:
-      - dnsmasq
-    restart: unless-stopped
+    restart: "no"
 
 networks:
   eve-net:

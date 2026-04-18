@@ -31,6 +31,10 @@
       <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>
       <span>Docs</span>
     </a>
+    <a class="mobile-nav-item" data-view="dhcp" onclick="showView('dhcp'); return false;" href="#">
+      <svg viewBox="0 0 16 16" fill="currentColor" width="18" height="18"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1H0V4zm0 3h16v5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V7zm3 2a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H3zm4 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H7zm4 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1h-2z"/></svg>
+      <span>DHCP</span>
+    </a>
   </nav>
 
   <!-- ── Topbar ─────────────────────────────────────────────────────────── -->
@@ -89,6 +93,13 @@
         <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
       </svg>
       Boot Instructions
+    </a>
+
+    <a class="sidebar-item" data-view="dhcp" onclick="showView('dhcp'); return false;" href="#">
+      <svg class="sidebar-item-icon" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1H0V4zm0 3h16v5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V7zm3 2a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H3zm4 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H7zm4 0a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1h-2z"/>
+      </svg>
+      DHCP Server
     </a>
   </nav>
 
@@ -597,6 +608,89 @@ if exists user-class and option user-class = "iPXE" {
         </div>
       </div>
     </div>
+
+
+  <!-- ── DHCP Server view ──────────────────────────────────────────────────── -->
+  <div class="view" id="view-dhcp">
+    <div class="view-header">
+      <h1 class="view-title">DHCP Server</h1>
+      <p class="view-subtitle">Built-in dnsmasq — hands out IP addresses and PXE boot options on your LAN</p>
+    </div>
+
+    <!-- Status card -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div id="dhcp-status-dot" class="server-badge-dot" style="width:14px;height:14px;flex-shrink:0;background:var(--text-muted);"></div>
+          <div>
+            <div id="dhcp-status-label" style="font-weight:600; font-size:15px;">Checking…</div>
+            <div id="dhcp-status-sub" style="font-size:12px; color:var(--text-muted); margin-top:2px;"></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-primary" id="dhcp-start-btn" onclick="dhcpStart()" style="display:none;">▶ Start DHCP</button>
+          <button class="btn btn-secondary" id="dhcp-stop-btn" onclick="dhcpStop()" style="display:none;">■ Stop DHCP</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings form -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Settings</h2>
+        <p class="card-subtitle">Saved to the config volume; applied on next start or restart.</p>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="field-label" for="dhcp-interface">Network Interface</label>
+          <input class="field-input" type="text" id="dhcp-interface" placeholder="eth0" />
+          <div class="field-hint">Host interface to listen on (e.g. eth0, eno1, enp3s0)</div>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label" for="dhcp-range">DHCP Range</label>
+          <input class="field-input" type="text" id="dhcp-range" placeholder="192.168.1.100,192.168.1.200,12h" />
+          <div class="field-hint">Start IP, end IP, lease time — dnsmasq dhcp-range format</div>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label" for="dhcp-router">Default Gateway <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+          <input class="field-input" type="text" id="dhcp-router" placeholder="192.168.1.1" />
+          <div class="field-hint">Router IP pushed to clients via DHCP option 3</div>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label" for="dhcp-dns">DNS Server <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+          <input class="field-input" type="text" id="dhcp-dns" placeholder="8.8.8.8" />
+          <div class="field-hint">DNS server IP pushed to clients via DHCP option 6</div>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label" for="dhcp-server-host">TFTP / HTTP Server IP</label>
+          <input class="field-input" type="text" id="dhcp-server-host" placeholder="auto-detected" />
+          <div class="field-hint">IP address PXE clients should download iPXE from. Leave empty to use the server's auto-detected LAN IP.</div>
+        </div>
+
+        <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="dhcpSaveSettings()">💾 Save Settings</button>
+          <button class="btn btn-primary"   onclick="dhcpApplyRestart()">↺ Apply &amp; Restart</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info box -->
+    <div class="info-box" style="margin-top:20px;">
+      <span class="info-box-icon">ℹ</span>
+      <div class="info-box-content">
+        <div class="info-box-title">Network requirement</div>
+        <div class="info-box-body">
+          The DHCP server uses <strong>host networking</strong> to receive broadcast packets.
+          It must be on the same Layer-2 segment as the machines being booted.
+          If your network already has a DHCP server, configure it to point PXE clients at this server's IP instead of running this one.
+        </div>
+      </div>
+    </div>
+  </div>
 
   </main>
 </div>
