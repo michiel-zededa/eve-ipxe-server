@@ -70,6 +70,7 @@ The included `server.sh` script manages the stack:
 ./server.sh status          # show container status + health checks
 ./server.sh logs [service]  # tail logs (e.g. ./server.sh logs webui)
 ./server.sh build           # rebuild images after a code change
+./server.sh clean           # stop containers and wipe ALL persistent data (volumes)
 
 PROFILES=dnsmasq ./server.sh start   # also start the optional DHCP service
 ```

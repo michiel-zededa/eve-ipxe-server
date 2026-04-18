@@ -8,6 +8,7 @@
 #   ./server.sh status          Show container status and health
 #   ./server.sh logs [service]  Tail logs (optionally for one service)
 #   ./server.sh build           Rebuild container images
+#   ./server.sh clean           Stop containers and delete ALL persistent data (volumes)
 #
 # The dnsmasq DHCP service is optional and not started by default.
 # To include it: PROFILES=dnsmasq ./server.sh start
@@ -106,8 +107,22 @@ case "${CMD}" in
     echo "Build complete. Run './server.sh start' to apply."
     ;;
 
+  clean)
+    _check_docker
+    echo "WARNING: This will stop all containers and permanently delete all"
+    echo "         persistent data (downloaded artifacts, configs, TFTP files)."
+    read -r -p "Are you sure? [y/N] " confirm
+    if [[ "${confirm}" =~ ^[Yy]$ ]]; then
+      echo "Stopping containers and removing volumes…"
+      _compose down -v
+      echo "All data wiped. Run './server.sh start' for a clean slate."
+    else
+      echo "Aborted."
+    fi
+    ;;
+
   help|--help|-h)
-    echo "Usage: $0 {start|stop|restart|status|logs [service]|build}"
+    echo "Usage: $0 {start|stop|restart|status|logs [service]|build|clean}"
     echo ""
     echo "  start     Start all containers (detached)"
     echo "  stop      Stop and remove all containers"
@@ -115,6 +130,7 @@ case "${CMD}" in
     echo "  status    Show container status and health"
     echo "  logs      Tail logs (./server.sh logs webui)"
     echo "  build     Rebuild container images"
+    echo "  clean     Stop containers and wipe ALL persistent data (volumes)"
     echo ""
     echo "Environment variables:"
     echo "  PROFILES=dnsmasq    Also start the optional DHCP service"
