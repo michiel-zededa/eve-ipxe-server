@@ -77,6 +77,8 @@ PROFILES=dnsmasq ./server.sh start   # also start the optional DHCP service
 Follow the 4-step wizard:
 1. **Select EVE-OS version** — fetched live from GitHub
 2. **Choose target platform** — architecture, hypervisor mode, scenario
+   - **AMD64**: bare metal or QEMU/VM scenarios available; `k` HV mode requires EVE ≥ 16.x
+   - **ARM64**: only the "ARM64 edge board" scenario is shown; NVIDIA JetPack variant tiles appear
 3. **Configure boot parameters** — install disk, controller URL, etc.
 4. **Download & activate** — artifacts are downloaded in the background; progress is streamed live
 

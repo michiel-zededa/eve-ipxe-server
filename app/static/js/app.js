@@ -275,6 +275,23 @@ function selectArch(arch) {
       selectVariant('generic');
     }
   }
+
+  // Scenario tiles: edge is arm64-only; baremetal/vm are amd64-only
+  const edgeTile   = document.getElementById('scenario-edge-tile');
+  const bmetalTile = document.querySelector('[data-scenario="baremetal"]');
+  const vmTile     = document.querySelector('[data-scenario="vm"]');
+  if (arch === 'arm64') {
+    if (edgeTile)   edgeTile.style.display   = '';
+    if (bmetalTile) bmetalTile.style.display  = 'none';
+    if (vmTile)     vmTile.style.display      = 'none';
+    selectScenario('edge');
+  } else {
+    if (edgeTile)   edgeTile.style.display   = 'none';
+    if (bmetalTile) bmetalTile.style.display  = '';
+    if (vmTile)     vmTile.style.display      = '';
+    if (state.selectedScenario === 'edge') selectScenario('baremetal');
+  }
+
   updateNvidiaWarning();
 }
 
@@ -867,6 +884,17 @@ function resetWizard() {
   // NVIDIA variants are arm64-only — hide them when resetting to amd64 default
   document.getElementById('variant-jp5').style.display = 'none';
   document.getElementById('variant-jp6').style.display = 'none';
+
+  // Scenario tiles: restore amd64 default (hide edge, show baremetal/vm)
+  const edgeTile = document.getElementById('scenario-edge-tile');
+  if (edgeTile) edgeTile.style.display = 'none';
+  const bmetalTile = document.querySelector('[data-scenario="baremetal"]');
+  const vmTile     = document.querySelector('[data-scenario="vm"]');
+  if (bmetalTile) bmetalTile.style.display = '';
+  if (vmTile)     vmTile.style.display     = '';
+  // Reselect the default scenario tile
+  const defaultScenario = document.querySelector('.option-tile[data-scenario="baremetal"]');
+  if (defaultScenario) defaultScenario.classList.add('selected');
 
   // Clear selected release card
   document.querySelectorAll('.release-card').forEach(c => c.classList.remove('selected'));
