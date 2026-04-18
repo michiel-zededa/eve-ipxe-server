@@ -19,6 +19,8 @@ services:
       - config:/data/config
       - tftp-root:/data/tftp
       - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "0"       # give appuser access to the docker socket (root group owns it)
     environment:
       SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
       WEBUI_PORT:        "8080"
