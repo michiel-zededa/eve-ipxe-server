@@ -292,7 +292,26 @@ function selectScenario(s) {
   document.querySelectorAll('[data-scenario]').forEach(t =>
     t.classList.toggle('selected', t.dataset.scenario === s));
 
-  // Edge scenario → suggest arm64 defaults
+  const diskEl    = document.getElementById('install-disk');
+  const diskHint  = document.querySelector('#install-disk + .field-hint');
+
+  if (s === 'vm') {
+    // VirtIO block device — the default for QEMU/KVM guests.
+    // Use /dev/hda for virtual SATA, /dev/sda for virtual SCSI.
+    if (diskEl && (diskEl.value === '/dev/sda' || diskEl.value === '/dev/vda')) {
+      diskEl.value = '/dev/vda';
+    }
+    if (diskHint) diskHint.textContent =
+      'VirtIO drive (default). Use /dev/hda for virtual SATA or /dev/sda for virtual SCSI.';
+  } else {
+    if (diskEl && diskEl.value === '/dev/vda') {
+      diskEl.value = '/dev/sda';
+    }
+    if (diskHint) diskHint.textContent =
+      'Primary disk for EVE OS installation (e.g. /dev/sda, /dev/nvme0n1, /dev/mmcblk0)';
+  }
+
+  // Edge scenario → suggest ARM64 serial console defaults
   if (s === 'edge' && state.selectedArch === 'amd64') {
     const consoleEl = document.getElementById('console');
     if (consoleEl && consoleEl.value === 'tty0 ttyS0,115200n8') {
