@@ -185,8 +185,9 @@ class BootConfigCreate(BaseModel):
         # Auto-fix common single-slash typo: https:/foo → https://foo
         import re
         v = re.sub(r'^(https?:/)(?!/)', r'\1/', v)
+        # Auto-prepend https:// when just a bare FQDN or IP is entered
         if not (v.startswith("https://") or v.startswith("http://")):
-            raise ValueError("Controller URL must start with https:// or http://")
+            v = "https://" + v
         return v
 
     @field_validator("extra_cmdline")

@@ -436,7 +436,6 @@ function collectParams() {
     install_disk:         val('install-disk') || '/dev/sda',
     persist_disk:         val('persist-disk') || null,
     controller_url:       val('controller-url') || null,
-    onboarding_key:       val('onboarding-key') || null,
     soft_serial:          val('soft-serial') || null,
     reboot_after_install: checked('reboot-after'),
     nuke_disk:            checked('nuke-disk'),
@@ -973,7 +972,6 @@ function resetWizard() {
   setVal('install-disk',   '/dev/sda');
   setVal('persist-disk',   '');
   setVal('controller-url', '');
-  setVal('onboarding-key', '');
   setVal('soft-serial',    '');
   setVal('console',        'tty0 ttyS0,115200n8');
   setVal('extra-cmdline',  '');

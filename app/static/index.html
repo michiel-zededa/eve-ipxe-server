@@ -332,12 +332,8 @@
             <div class="form-grid cols-1">
               <div class="form-group">
                 <label for="controller-url">Controller URL <span class="hint">optional</span></label>
-                <input type="url" id="controller-url" placeholder="https://zedcloud.example.com" />
-                <span class="field-hint">Leave blank to configure post-install, or for standalone/airgap deployments.</span>
-              </div>
-              <div class="form-group">
-                <label for="onboarding-key">Onboarding key <span class="hint">optional</span></label>
-                <input type="text" id="onboarding-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                <input type="text" id="controller-url" placeholder="zedcloud.example.com" />
+                <span class="field-hint">FQDN or full URL — <code>https://</code> is added automatically. Leave blank for standalone or airgap deployments.</span>
               </div>
             </div>
           </div>
@@ -347,8 +343,8 @@
             <div class="form-grid">
               <div class="form-group">
                 <label for="soft-serial">Serial override <span class="hint">optional</span></label>
-                <input type="text" id="soft-serial" placeholder="Leave blank to use MAC address" />
-                <span class="field-hint">Overrides the hardware serial. Default: derived from MAC (eve_soft_serial=${mac:hexhyp})</span>
+                <input type="text" id="soft-serial" placeholder="e.g. rack1-u4-node2" />
+                <span class="field-hint">A custom name stored on the device and used to identify it to the controller. Without this, EVE falls back to the hardware serial number or, if absent, the MAC address of the first ethernet interface.</span>
               </div>
               <div class="form-group">
                 <label for="console">Console</label>

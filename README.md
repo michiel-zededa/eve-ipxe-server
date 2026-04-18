@@ -284,11 +284,22 @@ Parameters injected into the grub.cfg (v12+) or kernel cmdline (pre-v12):
 | `eve_install_disk` | Target installation disk | `/dev/sda` |
 | `eve_persist_disk` | Persist data partition disk | `/dev/sdb` |
 | `eve_install_server` | ZedCloud controller URL | `https://zedcloud.company.com` |
-| `eve_onboarding_key` | Device onboarding key | `xxxxxxxx-xxxx-…` |
-| `eve_soft_serial` | Device serial override | `server-rack1-u14` |
+| `eve_soft_serial` | Device serial override (see below) | `rack1-u4-node2` |
 | `eve_reboot_after_install` | Auto-reboot after install | `1` |
 | `eve_nuke_disk` | Forcibly wipe disk | `/dev/sda` |
 | `eve_pause_before_install` | Drop to shell before install | `1` |
+
+### Device identity and `eve_soft_serial`
+
+EVE-OS identifies itself to the controller using a serial number. By default it reads the hardware serial from DMI/SMBIOS. On hardware without a valid serial (common on edge boards, VMs, and servers with placeholder values like `To Be Filled By O.E.M.`) EVE falls back to the MAC address of its first ethernet interface.
+
+`eve_soft_serial` injects a custom string that EVE stores permanently on the persist partition. Use it to give devices a meaningful, stable identity independent of hardware:
+
+```
+eve_soft_serial=rack1-u4-node2
+```
+
+The serial must match what is pre-registered in the ZedCloud controller for onboarding to succeed. The controller URL (`eve_install_server`) is entered as a plain FQDN in the wizard — `https://` is prepended automatically.
 
 ---
 
