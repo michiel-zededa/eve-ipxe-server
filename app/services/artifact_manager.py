@@ -452,6 +452,56 @@ def patch_grub_cfg(dest_dir: Path, grub_vars: dict[str, str]) -> None:
     logger.info("Patched EFI/BOOT/grub.cfg with %d variable overrides", len(grub_vars))
 
 
+# ── Startup migration ─────────────────────────────────────────────────────────
+
+def migrate_artifact_dir_names() -> None:
+    """
+    Rename artifact directories that were created with the old broken naming
+    scheme caused by Python 3.12 changing how str(enum_member) formats.
+
+    Old (broken): Architecture.amd64.HypervisorMode.kvm.Variant.generic
+    New (correct): amd64.kvm.generic
+    """
+    import re
+    cfg = get_settings()
+    root = cfg.artifacts_dir
+    if not root.exists():
+        return
+
+    pattern = re.compile(
+        r'^Architecture\.(\w+)\.HypervisorMode\.(\w+)\.Variant\.(.+)$'
+    )
+    for version_dir in sorted(root.iterdir()):
+        if not version_dir.is_dir() or version_dir.name.startswith("."):
+            continue
+        for combo_dir in sorted(version_dir.iterdir()):
+            if not combo_dir.is_dir() or combo_dir.name.startswith("."):
+                continue
+            m = pattern.match(combo_dir.name)
+            if not m:
+                continue
+            arch, hv, variant = m.group(1), m.group(2), m.group(3)
+            new_name = f"{arch}.{hv}.{variant}"
+            new_path = version_dir / new_name
+            if new_path.exists():
+                logger.warning(
+                    "Migration: target dir already exists, skipping rename: %s → %s",
+                    combo_dir.name, new_name,
+                )
+                continue
+            try:
+                combo_dir.rename(new_path)
+                logger.info(
+                    "Migration: renamed artifact dir %s/%s → %s",
+                    version_dir.name, combo_dir.name, new_name,
+                )
+            except OSError as exc:
+                logger.error(
+                    "Migration: failed to rename %s → %s: %s",
+                    combo_dir, new_path, exc,
+                )
+
+
 # ── Cache listing ─────────────────────────────────────────────────────────────
 
 async def list_cached_artifacts() -> list[dict]:

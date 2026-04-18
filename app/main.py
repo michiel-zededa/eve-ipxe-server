@@ -51,6 +51,11 @@ async def lifespan(app: FastAPI):
     # 2. Initialise database
     await init_db()
     logger.info("Database initialised")
+
+    # 2a. Migrate any artifact dirs created under the old broken naming scheme
+    #     (Python 3.12 changed str(enum_member) to include the class name).
+    artifact_manager.migrate_artifact_dir_names()
+
     artifact_manager.init_semaphore(cfg.max_concurrent_downloads)
     logger.info("Download semaphore initialised (max=%d)", cfg.max_concurrent_downloads)
 

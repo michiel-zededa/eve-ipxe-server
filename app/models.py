@@ -122,7 +122,9 @@ class ArtifactKey(BaseModel):
     variant:      Variant = Variant.generic
 
     def asset_prefix(self) -> str:
-        return f"{self.architecture}.{self.hv_mode}.{self.variant}"
+        # Always use .value so the path is e.g. "amd64.k.generic" regardless
+        # of Python version — str(enum_member) changed behaviour in Python 3.12.
+        return f"{self.architecture.value}.{self.hv_mode.value}.{self.variant.value}"
 
     def cache_dir_name(self) -> str:
         return f"{self.eve_version}/{self.asset_prefix()}"
