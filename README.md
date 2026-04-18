@@ -233,7 +233,9 @@ The wizard automatically disables the `k` option when a pre-16.x release is sele
 
 ## QEMU Testing
 
-Test the full PXE boot flow locally without physical hardware:
+Test the full PXE boot flow locally without physical hardware.
+
+In the wizard select **QEMU / KVM guest** as the scenario — the install disk field will automatically default to `/dev/vda` (VirtIO block device, the QEMU default). Use `/dev/hda` if you attach the drive with `-drive ...,if=ide` and `/dev/sda` for `-drive ...,if=scsi`.
 
 ```bash
 # Create a test disk
@@ -391,6 +393,9 @@ See `.env.example` for the full list. Key variables:
 - Ensure UEFI is enabled on the device (Pi: RPi4 UEFI firmware; Jetson: JetPack)
 - The `ipxe-arm64.efi` binary must be present in the TFTP root — check the Artifact Cache view
 - Verify your DHCP server sends `filename "ipxe-arm64.efi"` for arch=11 clients
+
+**Controller URL rejected with "must start with https://"**
+- A common paste issue is `https:/host` (one slash instead of two) — the wizard auto-corrects this silently, but double-check the URL if errors persist
 
 ---
 
