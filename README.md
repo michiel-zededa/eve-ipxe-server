@@ -132,11 +132,17 @@ DHCP). To activate it, open the **DHCP Server** section in the sidebar and confi
 | Setting | Example | Description |
 |---------|---------|-------------|
 | Network Interface | `eth0` | Host interface to bind for DHCP broadcasts |
-| DHCP Range | `192.168.1.100,192.168.1.200,12h` | IP pool start, end, and lease time — auto-populated from the server IP |
-| Subnet Mask | `255.255.255.0` | Pushed to clients; auto-calculated from the server IP (assumes /24) |
-| Default Gateway | `192.168.1.1` | Router IP pushed to clients (optional) |
+| Gateway IP | `192.168.1.1` | Router IP — also anchors subnet calculation |
+| Prefix Length | `/24` | CIDR prefix (dropdown /8–/30); auto-fills pool start/end |
+| Pool Start | `192.168.1.101` | First IP in the DHCP pool (auto-calculated from gateway + prefix) |
+| Pool End | `192.168.1.240` | Last IP in the DHCP pool (auto-calculated) |
+| Lease Time | `12h` | Lease duration (e.g. `1h`, `12h`, `24h`, `7d`) |
 | DNS Server | `8.8.8.8` | DNS IP pushed to clients (optional) |
 | TFTP / HTTP Server IP | `192.168.1.10` | This server's LAN IP (auto-detected if blank) |
+
+The calculated subnet info panel (mask, network, broadcast, usable hosts, pool size) updates
+live as you type. Pool start/end are auto-calculated from 40–95% of the usable address space
+but can be adjusted manually.
 
 Click **↺ Apply & Restart** to write the config and restart dnsmasq with it. The status badge
 changes from **Idle** (amber) to **Active** (green). Settings are persisted in the config
@@ -397,9 +403,9 @@ See `.env.example` for the full list. Key variables:
 | `WEBUI_PORT` | `8080` | Web UI and API port |
 | `HTTP_PORT` | `8081` | nginx artifact HTTP port |
 | `GITHUB_TOKEN` | — | GitHub PAT to raise API rate limit |
-| `INTERFACE` | `eth0` | Network interface for dnsmasq DHCP |
-| `DHCP_RANGE` | `…` | DHCP pool range and lease time |
 | `LOG_LEVEL` | `info` | Uvicorn log level |
+
+> **DHCP is configured via the web UI**, not environment variables. Open the **DHCP Server** section, fill in the settings, and click **↺ Apply & Restart**. Settings are saved to the config volume as `dhcp-settings.json` and survive restarts. The `INTERFACE`, `DHCP_RANGE`, `DHCP_ROUTER`, and `DHCP_DNS` variables in `.env.example` are a legacy fallback — if no web-UI config exists and `DHCP_RANGE` is set in the environment, dnsmasq will generate a minimal config from those env vars.
 
 ---
 
