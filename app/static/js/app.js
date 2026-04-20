@@ -1349,6 +1349,7 @@ function _renderDHCPStatus(data) {
 
 function _populateDHCPSettings(s) {
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  const setPh  = (id, v) => { const el = document.getElementById(id); if (el && v) el.placeholder = v; };
   setVal('dhcp-interface',   s.interface);
   setVal('dhcp-gateway',     s.gateway);
   // Prefix dropdown — value must be a string for the <select>
@@ -1359,17 +1360,27 @@ function _populateDHCPSettings(s) {
   setVal('dhcp-lease-time',  s.lease_time);
   setVal('dhcp-dns',         s.dhcp_dns);
   setVal('dhcp-server-host', s.server_host);
+  // Update placeholder text to reflect the actual host network so that
+  // example values shown in empty fields match the real subnet.
+  const inferred = _inferFromServerIP(state.serverInfo?.server_host);
+  if (inferred) {
+    setPh('dhcp-gateway',     inferred.gateway);
+    setPh('dhcp-range-start', inferred.range_start);
+    setPh('dhcp-range-end',   inferred.range_end);
+    setPh('dhcp-server-host', state.serverInfo?.server_host);
+  }
   // Refresh the calculated subnet panel to match the loaded values
   _refreshSubnetPanel();
 }
 
 function _collectDHCPSettings() {
+  const inferred = _inferFromServerIP(state.serverInfo?.server_host);
   return {
     interface:     document.getElementById('dhcp-interface')?.value?.trim()    || 'eth0',
     gateway:       document.getElementById('dhcp-gateway')?.value?.trim()      || null,
     prefix_length: parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10),
-    range_start:   document.getElementById('dhcp-range-start')?.value?.trim()  || '192.168.1.100',
-    range_end:     document.getElementById('dhcp-range-end')?.value?.trim()    || '192.168.1.200',
+    range_start:   document.getElementById('dhcp-range-start')?.value?.trim()  || inferred?.range_start || '192.168.1.100',
+    range_end:     document.getElementById('dhcp-range-end')?.value?.trim()    || inferred?.range_end   || '192.168.1.200',
     lease_time:    document.getElementById('dhcp-lease-time')?.value?.trim()   || '12h',
     dhcp_dns:      document.getElementById('dhcp-dns')?.value?.trim()          || null,
     server_host:   document.getElementById('dhcp-server-host')?.value?.trim()  || null,
