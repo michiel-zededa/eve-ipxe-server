@@ -37,6 +37,9 @@ async function loadServerInfo() {
     const info = await api('/api/server-info');
     state.serverInfo = info;
     document.getElementById('server-host-display').textContent = info.server_host;
+    // Populate the Server IP update field
+    const ipInput = document.getElementById('server-ip-input');
+    if (ipInput && !ipInput.dataset.dirty) ipInput.value = info.server_host;
     // Boot instructions page
     document.getElementById('instr-webui-url').innerHTML = `<code>${info.webui_base}</code>`;
     document.getElementById('instr-tftp').innerHTML     = `<code>tftp://${info.server_host}:69/</code>`;
@@ -58,6 +61,20 @@ async function loadServerInfo() {
     console.warn('Could not load server info:', e);
     const el = document.getElementById('server-host-display');
     if (el) el.textContent = 'Unavailable';
+  }
+}
+
+async function updateServerIP() {
+  const input = document.getElementById('server-ip-input');
+  const ip = input?.value?.trim();
+  if (!ip) { toast('Enter an IP address', 'error'); return; }
+  try {
+    const res = await api('/api/server/settings', 'PUT', { server_host: ip });
+    toast(res.message || 'Server IP updated', 'success');
+    input.dataset.dirty = '';       // clear dirty flag so loadServerInfo can refresh it
+    await loadServerInfo();         // reload endpoints table with new IP
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
   }
 }
 

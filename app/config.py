@@ -4,6 +4,7 @@ All settings have production-safe defaults.
 """
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 from functools import lru_cache
@@ -43,14 +44,28 @@ class Settings(BaseSettings):
     max_concurrent_downloads: int = 2
 
     def get_server_host(self) -> str:
-        """Return the configured host, or auto-detect the host's LAN IP.
+        """Return the server's LAN IP.
 
-        When running inside a Docker container the routing-table approach
-        returns the container's internal bridge IP (e.g. 172.18.0.2) which
-        is unreachable by PXE clients on the LAN.  We detect this and fall
-        back to host.docker.internal (resolved by Docker Desktop / Docker
-        Engine on Linux with --add-host) which gives the real host LAN IP.
+        Priority:
+          1. Runtime override written by the web UI
+             (/data/config/server-settings.json → server_host key)
+          2. SERVER_HOST environment variable / .env
+          3. Auto-detect: host.docker.internal (Docker Desktop / Linux
+             host-gateway) so we get the real host IP, not 172.18.x.x
+          4. ip-route source address
+          5. Socket trick fallback
         """
+        # 1. Runtime settings written by the UI
+        runtime_file = self.config_dir / "server-settings.json"
+        if runtime_file.exists():
+            try:
+                data = json.loads(runtime_file.read_text())
+                if data.get("server_host"):
+                    return data["server_host"]
+            except Exception:
+                pass
+
+        # 2. Env / .env
         if self.server_host:
             return self.server_host
 

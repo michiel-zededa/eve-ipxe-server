@@ -30,6 +30,75 @@ _compose() {
   ${cmd} "$@"
 }
 
+# Detect the host's outbound LAN IP (runs on the host, not inside Docker)
+_detect_host_ip() {
+  # Linux / macOS with iproute2
+  if command -v ip &>/dev/null; then
+    local ip
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null \
+         | awk '/src/{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+    [[ -n "$ip" ]] && echo "$ip" && return
+  fi
+  # macOS: route + ipconfig
+  if command -v route &>/dev/null && command -v ipconfig &>/dev/null; then
+    local iface ip
+    iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+    if [[ -n "$iface" ]]; then
+      ip=$(ipconfig getifaddr "$iface" 2>/dev/null)
+      [[ -n "$ip" ]] && echo "$ip" && return
+    fi
+  fi
+  # Last resort: hostname -I (Linux)
+  if command -v hostname &>/dev/null; then
+    local ip
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [[ -n "$ip" ]] && echo "$ip" && return
+  fi
+  echo ""
+}
+
+# Write SERVER_HOST to .env if it is not already set to a non-empty value
+_ensure_server_host() {
+  local env_file="${SCRIPT_DIR}/.env"
+
+  # Respect an explicit value already in the environment or .env
+  local current=""
+  if [[ -f "$env_file" ]]; then
+    current=$(grep "^SERVER_HOST=" "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]"'"'" || true)
+  fi
+  [[ -z "$current" ]] && current="${SERVER_HOST:-}"
+  if [[ -n "$current" ]]; then
+    echo "Server IP: ${current} (from .env / environment)"
+    return
+  fi
+
+  local detected
+  detected=$(_detect_host_ip)
+  if [[ -z "$detected" ]]; then
+    echo "Warning: could not auto-detect host IP. Set SERVER_HOST in .env manually."
+    return
+  fi
+
+  echo "Auto-detected host IP: ${detected}"
+
+  if [[ ! -f "$env_file" ]]; then
+    cp "${SCRIPT_DIR}/.env.example" "$env_file" 2>/dev/null || touch "$env_file"
+  fi
+
+  if grep -q "^SERVER_HOST=" "$env_file" 2>/dev/null; then
+    # Replace the existing (empty) SERVER_HOST= line
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s|^SERVER_HOST=.*|SERVER_HOST=${detected}|" "$env_file"
+    else
+      sed -i "s|^SERVER_HOST=.*|SERVER_HOST=${detected}|" "$env_file"
+    fi
+  else
+    echo "SERVER_HOST=${detected}" >> "$env_file"
+  fi
+  echo "Written SERVER_HOST=${detected} to .env"
+  export SERVER_HOST="${detected}"
+}
+
 _check_docker() {
   if ! command -v docker &>/dev/null; then
     echo "Error: docker is not installed or not in PATH." >&2
@@ -67,6 +136,7 @@ shift || true
 case "${CMD}" in
   start)
     _check_docker
+    _ensure_server_host
     echo "Starting EVE-OS iPXE Boot Server…"
     _compose up -d "$@"
     echo ""

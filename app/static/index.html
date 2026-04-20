@@ -500,6 +500,24 @@
         <p>How to point your nodes to this iPXE boot server</p>
       </div>
 
+      <!-- Server IP update -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div class="card-title" style="margin-bottom:2px;">Server IP</div>
+            <div class="card-subtitle">LAN IP used in all boot URLs and TFTP pointers</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input class="field-input" type="text" id="server-ip-input"
+                   style="width:180px; margin:0;"
+                   placeholder="192.168.1.x"
+                   oninput="this.dataset.dirty='1'"
+                   onkeydown="if(event.key==='Enter') updateServerIP()" />
+            <button class="btn btn-primary btn-sm" onclick="updateServerIP()">Update</button>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-title" style="margin-bottom:16px">Server Endpoints</div>
         <table class="instructions-table">

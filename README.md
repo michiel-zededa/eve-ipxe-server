@@ -368,6 +368,13 @@ Key endpoints:
 | `GET` | `/ipxe/boot.ipxe` | Serve the active boot script (TFTP chainload target) |
 | `GET` | `/ipxe/config/{id}/script` | Config-specific boot script |
 
+**Server settings**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/server/settings` | Get the current server host IP |
+| `PUT` | `/api/server/settings` | Update the server host IP at runtime (no restart needed) |
+
 **DHCP server**
 
 | Method | Path | Description |
@@ -387,7 +394,7 @@ See `.env.example` for the full list. Key variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SERVER_HOST` | auto | LAN IP of this server (auto-detected if unset) |
+| `SERVER_HOST` | auto | LAN IP of this server — auto-detected and written to `.env` by `./server.sh start`; can be changed at runtime from the Boot Instructions UI |
 | `BIND_ADDRESS` | `0.0.0.0` | Host interface for Docker port binding (compose only, not read by the app) |
 | `WEBUI_PORT` | `8080` | Web UI and API port |
 | `HTTP_PORT` | `8081` | nginx artifact HTTP port |
