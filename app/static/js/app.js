@@ -45,13 +45,19 @@ async function loadServerInfo() {
     document.getElementById('instr-tftp').innerHTML     = `<code>tftp://${info.server_host}:69/</code>`;
     document.getElementById('instr-http').innerHTML     = `<code>${info.artifact_http_base}/</code>`;
     document.getElementById('instr-ipxe-url').innerHTML = `<code>${info.ipxe_boot_url}</code>`;
-    // Update DHCP config example with real IPs
-    const dhcpEl = document.getElementById('dhcp-config-example');
-    if (dhcpEl) {
-      dhcpEl.textContent = dhcpEl.textContent
+    // Update DHCP config examples with real IPs
+    const _fillHostPort = id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = el.textContent
         .replaceAll('SERVER_HOST', info.server_host)
         .replaceAll('WEBUI_PORT', info.webui_port);
-    }
+    };
+    _fillHostPort('dhcp-config-example');
+    _fillHostPort('dhcp-alt-dnsmasq');
+    _fillHostPort('dhcp-alt-isc');
+    // Inline IP badge in the DHCP alt section
+    const altIp = document.getElementById('dhcp-alt-server-ip');
+    if (altIp) altIp.textContent = info.server_host;
     const qemuEl = document.getElementById('qemu-example');
     if (qemuEl) {
       qemuEl.textContent = qemuEl.textContent

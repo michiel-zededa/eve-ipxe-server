@@ -696,12 +696,66 @@ if exists user-class and option user-class = "iPXE" {
       <div class="info-box-content">
         <div class="info-box-title">Network requirement</div>
         <div class="info-box-body">
-          The DHCP server uses <strong>host networking</strong> to receive broadcast packets.
-          It must be on the same Layer-2 segment as the machines being booted.
-          If your network already has a DHCP server, configure it to point PXE clients at this server's IP instead of running this one.
+          The built-in DHCP server uses <strong>host networking</strong> to receive broadcast packets and must be on the same Layer-2 segment as the machines being booted.
         </div>
       </div>
     </div>
+
+    <!-- Existing DHCP server -->
+    <details class="card" style="margin-top:16px;" ontoggle="document.getElementById('dhcp-alt-chevron').style.transform=this.open?'rotate(90deg)':''">
+      <summary style="cursor:pointer; font-weight:600; font-size:14px; padding:4px 0; list-style:none; display:flex; align-items:center; gap:8px;">
+        <span id="dhcp-alt-chevron" style="font-size:12px; transition:transform .2s;">&#9658;</span>
+        Already have a DHCP server? Configure it to point clients here instead
+      </summary>
+      <div style="margin-top:16px;">
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+          Add the following PXE boot options to your existing DHCP server.
+          Replace <code>SERVER_HOST</code> with this server's LAN IP
+          (<span id="dhcp-alt-server-ip" style="color:var(--zed-orange);">—</span>).
+        </p>
+
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px;">dnsmasq</div>
+        <div class="code-block" style="margin-bottom:16px;">
+          <div class="code-block-header"><span class="code-block-title">dnsmasq.conf</span></div>
+          <pre id="dhcp-alt-dnsmasq"># TFTP server address (option 66)
+dhcp-option=66,SERVER_HOST
+
+# BIOS PXE clients
+dhcp-boot=undionly.kpxe,SERVER_HOST,SERVER_HOST
+
+# UEFI x86_64 clients (arch 7)
+dhcp-match=set:efi-x86_64,option:client-arch,7
+dhcp-boot=tag:efi-x86_64,ipxe.efi,SERVER_HOST,SERVER_HOST
+
+# UEFI arm64 clients (arch 11)
+dhcp-match=set:efi-arm64,option:client-arch,11
+dhcp-boot=tag:efi-arm64,ipxe-arm64.efi,SERVER_HOST,SERVER_HOST
+
+# Once iPXE is running, redirect to the boot script
+dhcp-userclass=set:ipxe,iPXE
+dhcp-boot=tag:ipxe,http://SERVER_HOST:WEBUI_PORT/ipxe/boot.ipxe</pre>
+        </div>
+
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px;">ISC DHCP (dhcpd.conf)</div>
+        <div class="code-block">
+          <div class="code-block-header"><span class="code-block-title">dhcpd.conf</span></div>
+          <pre id="dhcp-alt-isc">next-server SERVER_HOST;
+filename "undionly.kpxe";
+
+# UEFI clients override the filename
+if substring (option vendor-class-identifier, 0, 20) = "PXEClient:Arch:00007" {
+  filename "ipxe.efi";         # x86_64 UEFI
+} elsif substring (option vendor-class-identifier, 0, 20) = "PXEClient:Arch:00011" {
+  filename "ipxe-arm64.efi";   # ARM64 UEFI
+}
+
+# Once iPXE is running, send it to the boot script
+if exists user-class and option user-class = "iPXE" {
+  filename "http://SERVER_HOST:WEBUI_PORT/ipxe/boot.ipxe";
+}</pre>
+        </div>
+      </div>
+    </details>
   </div>
 
   </main>
