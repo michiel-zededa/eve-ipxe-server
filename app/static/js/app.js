@@ -1083,19 +1083,72 @@ function toast(msg, type = 'info') {
 }
 
 // ── DHCP Server management ───────────────────────────────────────────────────
+
+/** Cached interface list from the last successful detection. */
+state.dhcpInterfaces = state.dhcpInterfaces || [];
+
 async function loadDHCPStatus() {
   try {
     const data = await api('/api/dhcp/status');
     _renderDHCPStatus(data);
-    // Always merge with server-IP-derived defaults: ensures the pool is on
-    // the correct subnet even when loading saved settings that may be stale
-    // or were created on a different host/network.
-    const settings = _mergeWithInferred(data.settings || {}, state.serverInfo?.server_host);
-    _populateDHCPSettings(settings);
+    const saved = data.settings || {};
+    // Populate the editable fields from saved settings first
+    _populateDHCPSettings(saved);
+    // Then load host interfaces; this will update the derived network info panel
+    // and validate / fix the pool range if it is on the wrong subnet.
+    await loadDHCPInterfaces(saved.interface || 'eth0', saved);
   } catch (e) {
     document.getElementById('dhcp-status-label').textContent = 'Error loading status';
     document.getElementById('dhcp-status-sub').textContent   = e.message;
   }
+}
+
+/**
+ * Fetch host interfaces from the API, populate the dropdown, and pre-select
+ * `preferredIface`.  If interface detection is unavailable, show a fallback
+ * message and derive network info from the server IP instead.
+ *
+ * @param {string}  preferredIface  Interface name to pre-select (from saved settings)
+ * @param {object}  savedSettings   Full saved settings dict (used to validate pool subnet)
+ */
+async function loadDHCPInterfaces(preferredIface = 'eth0', savedSettings = {}) {
+  const sel = document.getElementById('dhcp-interface');
+  if (!sel) return;
+
+  try {
+    const data = await api('/api/dhcp/interfaces');
+    state.dhcpInterfaces = data.interfaces || [];
+  } catch (_e) {
+    state.dhcpInterfaces = [];
+  }
+
+  // Rebuild dropdown options
+  sel.innerHTML = '';
+  if (state.dhcpInterfaces.length === 0) {
+    const opt = document.createElement('option');
+    opt.value       = preferredIface || 'eth0';
+    opt.textContent = (preferredIface || 'eth0') + ' (detection unavailable)';
+    sel.appendChild(opt);
+  } else {
+    for (const iface of state.dhcpInterfaces) {
+      const opt = document.createElement('option');
+      opt.value       = iface.interface;
+      opt.textContent = `${iface.interface}  —  ${iface.ip}/${iface.prefix_length}`;
+      if (iface.interface === preferredIface) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    // If saved interface not in list, still show it at the top (stale entry)
+    if (preferredIface && !state.dhcpInterfaces.some(i => i.interface === preferredIface)) {
+      const opt = document.createElement('option');
+      opt.value       = preferredIface;
+      opt.textContent = preferredIface + ' (not detected)';
+      opt.selected    = true;
+      sel.insertBefore(opt, sel.firstChild);
+    }
+  }
+
+  // Update derived info and validate / refresh pool range
+  onDHCPInterfaceChange(savedSettings);
 }
 
 // ── Subnet utilities ─────────────────────────────────────────────────────────
@@ -1146,8 +1199,9 @@ function _defaultPool(anchorIp, prefix) {
 }
 
 /**
- * Best available subnet anchor: gateway IP if valid, else pool start IP.
- * This lets all subnet calculations work even when no gateway is configured.
+ * Best available subnet anchor: gateway IP (from hidden field) if valid,
+ * else pool start IP.  This lets subnet calculations work even when the
+ * interface detection is unavailable.
  */
 function _subnetAnchor() {
   const gw      = document.getElementById('dhcp-gateway')?.value?.trim();
@@ -1157,29 +1211,110 @@ function _subnetAnchor() {
   return null;
 }
 
-/** Update the calculated subnet info panel. Falls back to pool-start when no gateway is set. */
+/**
+ * Called when the interface dropdown selection changes.
+ * Updates hidden derived fields, the read-only network info panel, and
+ * recalculates the pool range when the interface subnet differs from the
+ * currently entered pool.
+ *
+ * @param {object} [savedSettings]  Full saved settings (used to validate existing pool)
+ */
+function onDHCPInterfaceChange(savedSettings = {}) {
+  const sel   = document.getElementById('dhcp-interface');
+  const iface = sel ? sel.value : '';
+
+  // Find the matching interface in the cached list
+  const info = state.dhcpInterfaces.find(i => i.interface === iface) || null;
+
+  // Update hidden derived fields so validators / subnet panel keep working
+  const gwEl     = document.getElementById('dhcp-gateway');
+  const prefixEl = document.getElementById('dhcp-prefix');
+  if (gwEl)     gwEl.value     = info ? (info.gateway || '') : '';
+  if (prefixEl) prefixEl.value = String(info ? info.prefix_length : 24);
+
+  _updateNetworkInfoPanel(info);
+
+  // Only auto-update pool range when interface info is available
+  if (info) {
+    const anchor = info.gateway && _isValidIp(info.gateway) ? info.gateway : info.ip;
+    const prefix = info.prefix_length;
+    const maskInt = _prefixToMaskInt(prefix);
+
+    const startEl = document.getElementById('dhcp-range-start');
+    const endEl   = document.getElementById('dhcp-range-end');
+
+    // Check whether the existing pool (from either saved settings or the input)
+    // is on the same subnet as the selected interface.
+    const startIp = startEl?.value?.trim() || savedSettings.range_start || '';
+    let poolNeedsReset = !startIp || !_isValidIp(startIp);
+    if (!poolNeedsReset) {
+      const ifaceNet = _ipToInt(anchor) & maskInt;
+      const poolNet  = _ipToInt(startIp) & maskInt;
+      poolNeedsReset = (ifaceNet !== poolNet);
+    }
+
+    if (poolNeedsReset) {
+      const pool = _defaultPool(anchor, prefix);
+      if (pool && startEl && endEl) {
+        startEl.value = pool.start;
+        endEl.value   = pool.end;
+      }
+    }
+  }
+
+  _validateDHCPRange();
+  _refreshSubnetPanel();
+}
+
+/** Populate the read-only network details panel from detected interface info. */
+function _updateNetworkInfoPanel(info) {
+  const panel = document.getElementById('dhcp-network-info');
+  if (!panel) return;
+
+  if (!info) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const serverHost = state.serverInfo?.server_host || '—';
+  const subnetStr  = `${info.ip}/${info.prefix_length}`;
+  const subnetInfo = _subnetInfo(
+    info.gateway && _isValidIp(info.gateway) ? info.gateway : info.ip,
+    info.prefix_length
+  );
+
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
+  setText('dhcp-info-ip',      info.ip);
+  setText('dhcp-info-subnet',  subnetStr);
+  setText('dhcp-info-gateway', info.gateway || '—');
+  setText('dhcp-info-mask',    subnetInfo ? subnetInfo.mask : '—');
+  setText('dhcp-info-usable',  subnetInfo ? subnetInfo.usable.toLocaleString() : '—');
+  setText('dhcp-info-server',  serverHost);
+
+  panel.style.display = '';
+}
+
+/** Update the pool summary panel (pool count, network, broadcast). */
 function _refreshSubnetPanel() {
   const anchor = _subnetAnchor();
   const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
   const panel  = document.getElementById('dhcp-subnet-info');
-  if (!anchor) { if (panel) panel.style.display = 'none'; return; }
+  if (!anchor || !panel) { if (panel) panel.style.display = 'none'; return; }
 
   const info = _subnetInfo(anchor, prefix);
-  if (!info || !panel) return;
+  if (!info) { panel.style.display = 'none'; return; }
 
   const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
   const endIp   = document.getElementById('dhcp-range-end')?.value?.trim();
   let poolSize  = '—';
   if (startIp && endIp && _isValidIp(startIp) && _isValidIp(endIp)) {
     const diff = _ipToInt(endIp) - _ipToInt(startIp) + 1;
-    poolSize = diff > 0 ? diff.toLocaleString() : '⚠ invalid';
+    poolSize = diff > 0 ? diff.toLocaleString() + ' IPs' : '⚠ invalid';
   }
 
-  document.getElementById('dhcp-calc-mask').textContent      = info.mask;
+  document.getElementById('dhcp-calc-pool').textContent      = poolSize;
   document.getElementById('dhcp-calc-network').textContent   = `${info.network}/${prefix}`;
   document.getElementById('dhcp-calc-broadcast').textContent = info.broadcast;
-  document.getElementById('dhcp-calc-usable').textContent    = info.usable.toLocaleString();
-  document.getElementById('dhcp-calc-pool').textContent      = poolSize;
   panel.style.display = '';
 }
 
@@ -1218,79 +1353,10 @@ function _validateDHCPRange() {
   return ok();
 }
 
-/**
- * Called when gateway IP or prefix changes.
- * Recalculates pool start/end based on the new subnet definition.
- * Falls back to pool-start as anchor when no gateway is set.
- */
-function onDHCPNetworkChange() {
-  const anchor = _subnetAnchor();
-  const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
-  if (anchor) {
-    const pool = _defaultPool(anchor, prefix);
-    if (pool) {
-      document.getElementById('dhcp-range-start').value = pool.start;
-      document.getElementById('dhcp-range-end').value   = pool.end;
-    }
-  }
-  _validateDHCPRange();
-  _refreshSubnetPanel();
-}
-
 /** Called when pool start/end are edited manually — re-validate and refresh pool count. */
 function onDHCPRangeChange() {
   _validateDHCPRange();
   _refreshSubnetPanel();
-}
-
-/** Derive sensible defaults anchored to the server's own IP and /24 subnet. */
-function _inferFromServerIP(serverIp) {
-  if (!serverIp || !_isValidIp(serverIp) || serverIp === '127.0.0.1') return null;
-  const p    = serverIp.split('.');
-  const gwIp = `${p[0]}.${p[1]}.${p[2]}.1`;  // gateway = .1 of same /24
-  const pool = _defaultPool(gwIp, 24);
-  if (!pool) return null;
-  return { gateway: gwIp, prefix_length: 24, range_start: pool.start, range_end: pool.end, lease_time: '12h' };
-}
-
-/**
- * Merge saved settings with server-IP-derived defaults.
- * Guarantees the DHCP pool is always on the same subnet as the server so
- * PXE clients can reach the TFTP/HTTP server without routing.
- *
- * Rules applied in order:
- *  1. Gateway:    use saved if valid IP; otherwise use inferred (.1 of server /24).
- *  2. Pool range: keep saved if it is on the same subnet as the server IP;
- *                 otherwise reset to inferred (stale defaults from another host).
- *  3. Everything else (interface, lease_time, dns, server_host): keep saved.
- */
-function _mergeWithInferred(saved, serverIp) {
-  const inferred = _inferFromServerIP(serverIp);
-  if (!inferred) return saved;
-
-  // 1. Gateway
-  const gateway = (saved.gateway && _isValidIp(saved.gateway))
-    ? saved.gateway
-    : inferred.gateway;
-
-  // 2. Pool — reset if saved pool is on a different subnet than the server
-  let range_start = saved.range_start;
-  let range_end   = saved.range_end;
-  const prefix    = saved.prefix_length || inferred.prefix_length;
-  if (serverIp && _isValidIp(serverIp) && range_start && _isValidIp(range_start)) {
-    const maskInt   = _prefixToMaskInt(prefix);
-    const serverNet = _ipToInt(serverIp)    & maskInt;
-    const poolNet   = _ipToInt(range_start) & maskInt;
-    if (serverNet !== poolNet) {
-      range_start = inferred.range_start;
-      range_end   = inferred.range_end;
-    }
-  } else if (!range_start) {
-    range_start = inferred.range_start;
-    range_end   = inferred.range_end;
-  }
-
-  return { ...saved, gateway, prefix_length: prefix, range_start, range_end };
 }
 
 function _renderDHCPStatus(data) {
@@ -1347,43 +1413,30 @@ function _renderDHCPStatus(data) {
   }
 }
 
+/**
+ * Populate the editable DHCP form fields from a saved settings object.
+ * The interface dropdown is handled separately by loadDHCPInterfaces().
+ */
 function _populateDHCPSettings(s) {
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-  const setPh  = (id, v) => { const el = document.getElementById(id); if (el && v) el.placeholder = v; };
-  setVal('dhcp-interface',   s.interface);
-  setVal('dhcp-gateway',     s.gateway);
-  // Prefix dropdown — value must be a string for the <select>
-  const prefixEl = document.getElementById('dhcp-prefix');
-  if (prefixEl) prefixEl.value = String(s.prefix_length || 24);
   setVal('dhcp-range-start', s.range_start);
   setVal('dhcp-range-end',   s.range_end);
   setVal('dhcp-lease-time',  s.lease_time);
-  setVal('dhcp-dns',         s.dhcp_dns);
-  setVal('dhcp-server-host', s.server_host);
-  // Update placeholder text to reflect the actual host network so that
-  // example values shown in empty fields match the real subnet.
-  const inferred = _inferFromServerIP(state.serverInfo?.server_host);
-  if (inferred) {
-    setPh('dhcp-gateway',     inferred.gateway);
-    setPh('dhcp-range-start', inferred.range_start);
-    setPh('dhcp-range-end',   inferred.range_end);
-    setPh('dhcp-server-host', state.serverInfo?.server_host);
-  }
-  // Refresh the calculated subnet panel to match the loaded values
+  // Pre-fill hidden derived fields from saved data so subnet panel shows
+  // something useful before interface detection completes.
+  setVal('dhcp-gateway', s.gateway);
+  const prefixEl = document.getElementById('dhcp-prefix');
+  if (prefixEl) prefixEl.value = String(s.prefix_length || 24);
   _refreshSubnetPanel();
 }
 
+/** Collect the user-editable fields for the API. */
 function _collectDHCPSettings() {
-  const inferred = _inferFromServerIP(state.serverInfo?.server_host);
   return {
-    interface:     document.getElementById('dhcp-interface')?.value?.trim()    || 'eth0',
-    gateway:       document.getElementById('dhcp-gateway')?.value?.trim()      || null,
-    prefix_length: parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10),
-    range_start:   document.getElementById('dhcp-range-start')?.value?.trim()  || inferred?.range_start || '192.168.1.100',
-    range_end:     document.getElementById('dhcp-range-end')?.value?.trim()    || inferred?.range_end   || '192.168.1.200',
-    lease_time:    document.getElementById('dhcp-lease-time')?.value?.trim()   || '12h',
-    dhcp_dns:      document.getElementById('dhcp-dns')?.value?.trim()          || null,
-    server_host:   document.getElementById('dhcp-server-host')?.value?.trim()  || null,
+    interface:   document.getElementById('dhcp-interface')?.value?.trim()   || 'eth0',
+    range_start: document.getElementById('dhcp-range-start')?.value?.trim() || '192.168.1.100',
+    range_end:   document.getElementById('dhcp-range-end')?.value?.trim()   || '192.168.1.200',
+    lease_time:  document.getElementById('dhcp-lease-time')?.value?.trim()  || '12h',
   };
 }
 

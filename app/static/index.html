@@ -654,51 +654,34 @@ if exists user-class and option user-class = "iPXE" {
       </div>
       <div class="card-body">
 
-        <!-- Interface -->
+        <!-- Interface dropdown -->
         <div class="form-group">
           <label class="field-label" for="dhcp-interface">Network Interface</label>
-          <input class="field-input" type="text" id="dhcp-interface" placeholder="eth0" />
-          <div class="field-hint">Host interface to listen on (e.g. eth0, eno1, enp3s0)</div>
-        </div>
-
-        <!-- Gateway + prefix — side by side -->
-        <div class="form-group">
-          <label class="field-label">Gateway IP &amp; Prefix</label>
-          <div style="display:grid; grid-template-columns:1fr 120px; gap:8px;">
-            <input class="field-input" type="text" id="dhcp-gateway"
-                   placeholder="192.168.1.1"
-                   oninput="onDHCPNetworkChange()" style="margin:0;" />
-            <select class="field-input" id="dhcp-prefix" onchange="onDHCPNetworkChange()" style="margin:0;">
-              <option value="8">/8</option>
-              <option value="12">/12</option>
-              <option value="16">/16</option>
-              <option value="20">/20</option>
-              <option value="21">/21</option>
-              <option value="22">/22</option>
-              <option value="23">/23</option>
-              <option value="24" selected>/24</option>
-              <option value="25">/25</option>
-              <option value="26">/26</option>
-              <option value="27">/27</option>
-              <option value="28">/28</option>
-              <option value="29">/29</option>
-              <option value="30">/30</option>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select class="field-input" id="dhcp-interface" onchange="onDHCPInterfaceChange()" style="margin:0; flex:1;">
+              <option value="">— detecting interfaces… —</option>
             </select>
+            <button class="btn btn-secondary" onclick="loadDHCPInterfaces()" style="white-space:nowrap; padding:6px 12px; font-size:13px;">⟳ Refresh</button>
           </div>
-          <div class="field-hint">Router IP pushed to clients; prefix defines the subnet</div>
+          <div class="field-hint">Select the host network interface for the DHCP/PXE server</div>
         </div>
 
-        <!-- Calculated subnet info panel -->
-        <div id="dhcp-subnet-info" style="background:var(--card-bg,rgba(255,255,255,.04)); border:1px solid var(--border,rgba(255,255,255,.08)); border-radius:8px; padding:12px 16px; margin-bottom:16px; font-size:13px; display:none;">
+        <!-- Read-only derived network info panel -->
+        <div id="dhcp-network-info" style="background:var(--card-bg,rgba(255,255,255,.04)); border:1px solid var(--border,rgba(255,255,255,.08)); border-radius:8px; padding:12px 16px; margin-bottom:16px; font-size:13px; display:none;">
+          <div style="font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px;">Network Details (auto-detected, read-only)</div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 24px;">
-            <span style="color:var(--text-muted);">Subnet Mask</span>    <span id="dhcp-calc-mask"      style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
-            <span style="color:var(--text-muted);">Network</span>         <span id="dhcp-calc-network"   style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
-            <span style="color:var(--text-muted);">Broadcast</span>       <span id="dhcp-calc-broadcast" style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
-            <span style="color:var(--text-muted);">Usable Hosts</span>   <span id="dhcp-calc-usable"    style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
-            <span style="color:var(--text-muted);">DHCP Pool Size</span> <span id="dhcp-calc-pool"      style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Interface IP</span>    <span id="dhcp-info-ip"        style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Subnet</span>           <span id="dhcp-info-subnet"    style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Gateway</span>          <span id="dhcp-info-gateway"   style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Subnet Mask</span>      <span id="dhcp-info-mask"      style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Usable Hosts</span>     <span id="dhcp-info-usable"    style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">TFTP / Boot Server</span><span id="dhcp-info-server"  style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
           </div>
-          <div id="dhcp-range-warning" style="display:none; color:#f59e0b; font-size:12px; margin-top:8px;"></div>
         </div>
+
+        <!-- Hidden fields carry derived values for JS to read -->
+        <input type="hidden" id="dhcp-gateway"      value="" />
+        <input type="hidden" id="dhcp-prefix"       value="24" />
 
         <!-- Pool start + end — side by side -->
         <div class="form-group">
@@ -717,6 +700,16 @@ if exists user-class and option user-class = "iPXE" {
               <div class="field-hint" style="margin-top:2px;">End</div>
             </div>
           </div>
+          <div id="dhcp-range-warning" style="display:none; color:#f59e0b; font-size:12px; margin-top:6px;"></div>
+        </div>
+
+        <!-- Pool size info line -->
+        <div id="dhcp-subnet-info" style="background:var(--card-bg,rgba(255,255,255,.04)); border:1px solid var(--border,rgba(255,255,255,.08)); border-radius:8px; padding:10px 16px; margin-bottom:16px; font-size:13px; display:none;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 24px;">
+            <span style="color:var(--text-muted);">DHCP Pool Size</span> <span id="dhcp-calc-pool" style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Network</span>         <span id="dhcp-calc-network" style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+            <span style="color:var(--text-muted);">Broadcast</span>       <span id="dhcp-calc-broadcast" style="text-align:right; font-variant-numeric:tabular-nums;">—</span>
+          </div>
         </div>
 
         <!-- Lease time -->
@@ -724,20 +717,6 @@ if exists user-class and option user-class = "iPXE" {
           <label class="field-label" for="dhcp-lease-time">Lease Time</label>
           <input class="field-input" type="text" id="dhcp-lease-time" placeholder="12h" style="max-width:120px;" />
           <div class="field-hint">Duration: <code>1h</code>, <code>12h</code>, <code>24h</code>, <code>7d</code></div>
-        </div>
-
-        <!-- DNS -->
-        <div class="form-group">
-          <label class="field-label" for="dhcp-dns">DNS Server <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
-          <input class="field-input" type="text" id="dhcp-dns" placeholder="8.8.8.8" />
-          <div class="field-hint">DNS server IP pushed to clients via DHCP option 6</div>
-        </div>
-
-        <!-- TFTP server IP -->
-        <div class="form-group">
-          <label class="field-label" for="dhcp-server-host">TFTP / HTTP Server IP</label>
-          <input class="field-input" type="text" id="dhcp-server-host" placeholder="auto-detected" />
-          <div class="field-hint">Leave empty to use the server's auto-detected LAN IP</div>
         </div>
 
         <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:8px; flex-wrap:wrap;">

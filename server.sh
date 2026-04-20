@@ -32,14 +32,12 @@ _compose() {
 
 # Detect the host's outbound LAN IP (runs on the host, not inside Docker)
 _detect_host_ip() {
-  # Linux / macOS with iproute2
   if command -v ip &>/dev/null; then
     local ip
     ip=$(ip -4 route get 1.1.1.1 2>/dev/null \
          | awk '/src/{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
     [[ -n "$ip" ]] && echo "$ip" && return
   fi
-  # macOS: route + ipconfig
   if command -v route &>/dev/null && command -v ipconfig &>/dev/null; then
     local iface ip
     iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
@@ -48,7 +46,6 @@ _detect_host_ip() {
       [[ -n "$ip" ]] && echo "$ip" && return
     fi
   fi
-  # Last resort: hostname -I (Linux)
   if command -v hostname &>/dev/null; then
     local ip
     ip=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -57,7 +54,41 @@ _detect_host_ip() {
   echo ""
 }
 
-# Write SERVER_HOST to .env if it is not already set to a non-empty value
+# Detect the host's default gateway and the CIDR prefix of the outbound interface.
+# Outputs two lines: GATEWAY=<ip>  PREFIX_LENGTH=<n>
+_detect_network_info() {
+  local server_ip="${1:-}"
+  local gateway="" prefix_length="" iface=""
+
+  if command -v ip &>/dev/null; then
+    # Linux
+    iface=$(ip -4 route get 1.1.1.1 2>/dev/null \
+            | awk '/dev/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')
+    gateway=$(ip route show default 2>/dev/null | awk 'NR==1{print $3}')
+    if [[ -n "$iface" && -n "$server_ip" ]]; then
+      prefix_length=$(ip -4 addr show dev "$iface" 2>/dev/null \
+        | awk -v ip="$server_ip" '/inet /{split($2,a,"/"); if(a[1]==ip) print a[2]}')
+    fi
+  elif command -v route &>/dev/null; then
+    # macOS
+    iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+    gateway=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2}')
+    if [[ -n "$iface" && -n "$server_ip" ]]; then
+      local nm_hex
+      nm_hex=$(ifconfig "$iface" 2>/dev/null \
+        | awk -v ip="$server_ip" '/inet /{if($2==ip) print $4}' | head -1)
+      if [[ -n "$nm_hex" ]] && command -v python3 &>/dev/null; then
+        prefix_length=$(python3 -c \
+          "n=int('$nm_hex',16)&0xffffffff; print(bin(n).count('1'))" 2>/dev/null)
+      fi
+    fi
+  fi
+
+  echo "GATEWAY=${gateway:-}"
+  echo "PREFIX_LENGTH=${prefix_length:-24}"
+}
+
+# Write SERVER_HOST, GATEWAY, PREFIX_LENGTH to .env if not already set.
 _ensure_server_host() {
   local env_file="${SCRIPT_DIR}/.env"
 
@@ -69,6 +100,8 @@ _ensure_server_host() {
   [[ -z "$current" ]] && current="${SERVER_HOST:-}"
   if [[ -n "$current" ]]; then
     echo "Server IP: ${current} (from .env / environment)"
+    # Still update gateway/prefix even if SERVER_HOST was already set
+    _write_network_info "$current" "$env_file"
     return
   fi
 
@@ -85,18 +118,41 @@ _ensure_server_host() {
     cp "${SCRIPT_DIR}/.env.example" "$env_file" 2>/dev/null || touch "$env_file"
   fi
 
-  if grep -q "^SERVER_HOST=" "$env_file" 2>/dev/null; then
-    # Replace the existing (empty) SERVER_HOST= line
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sed -i '' "s|^SERVER_HOST=.*|SERVER_HOST=${detected}|" "$env_file"
-    else
-      sed -i "s|^SERVER_HOST=.*|SERVER_HOST=${detected}|" "$env_file"
-    fi
-  else
-    echo "SERVER_HOST=${detected}" >> "$env_file"
-  fi
+  _upsert_env "SERVER_HOST" "${detected}" "$env_file"
   echo "Written SERVER_HOST=${detected} to .env"
   export SERVER_HOST="${detected}"
+
+  _write_network_info "${detected}" "$env_file"
+}
+
+# Write GATEWAY and PREFIX_LENGTH to the env file based on detected network info.
+_write_network_info() {
+  local server_ip="${1}" env_file="${2}"
+  local net_info gateway prefix_length
+
+  net_info=$(_detect_network_info "$server_ip")
+  gateway=$(echo "$net_info" | awk -F= '/^GATEWAY=/{print $2}')
+  prefix_length=$(echo "$net_info" | awk -F= '/^PREFIX_LENGTH=/{print $2}')
+
+  [[ -n "$gateway" ]]       && _upsert_env "GATEWAY"       "${gateway}"       "$env_file"
+  [[ -n "$prefix_length" ]] && _upsert_env "PREFIX_LENGTH" "${prefix_length}" "$env_file"
+
+  [[ -n "$gateway" ]]       && echo "Detected gateway: ${gateway}"
+  [[ -n "$prefix_length" ]] && echo "Detected subnet prefix: /${prefix_length}"
+}
+
+# Insert or replace a KEY=VALUE line in an env file.
+_upsert_env() {
+  local key="${1}" value="${2}" file="${3}"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+      sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+    fi
+  else
+    echo "${key}=${value}" >> "$file"
+  fi
 }
 
 _check_docker() {
