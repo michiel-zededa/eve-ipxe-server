@@ -21,6 +21,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "0"       # give appuser access to the docker socket (root group owns it)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # resolve host LAN IP (Linux; no-op on Docker Desktop)
     environment:
       SERVER_HOST:       "${SERVER_HOST:-}"          # auto-detected if blank
       WEBUI_PORT:        "8080"

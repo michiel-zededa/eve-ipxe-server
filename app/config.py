@@ -43,10 +43,30 @@ class Settings(BaseSettings):
     max_concurrent_downloads: int = 2
 
     def get_server_host(self) -> str:
-        """Return the configured host, or auto-detect from routing table."""
+        """Return the configured host, or auto-detect the host's LAN IP.
+
+        When running inside a Docker container the routing-table approach
+        returns the container's internal bridge IP (e.g. 172.18.0.2) which
+        is unreachable by PXE clients on the LAN.  We detect this and fall
+        back to host.docker.internal (resolved by Docker Desktop / Docker
+        Engine on Linux with --add-host) which gives the real host LAN IP.
+        """
         if self.server_host:
             return self.server_host
+
+        def _is_docker_bridge(ip: str) -> bool:
+            """Return True if ip looks like a Docker-managed bridge address."""
+            # 172.16.0.0/12 is the range Docker uses for bridge networks
+            parts = ip.split(".")
+            if len(parts) != 4:
+                return False
+            try:
+                return int(parts[0]) == 172 and 16 <= int(parts[1]) <= 31
+            except ValueError:
+                return False
+
         # Try ip route first (Linux)
+        candidate = ""
         try:
             result = subprocess.run(
                 ["ip", "-4", "route", "get", "1.1.1.1"],
@@ -54,10 +74,28 @@ class Settings(BaseSettings):
             )
             tokens = result.stdout.split()
             if "src" in tokens:
-                return tokens[tokens.index("src") + 1]
+                candidate = tokens[tokens.index("src") + 1]
         except Exception:
             pass
-        # Fallback: socket trick
+
+        # If we're in a container (/.dockerenv exists) and the detected IP is
+        # a Docker bridge address, try host.docker.internal instead — this
+        # resolves to the actual host machine's IP on Docker Desktop (Mac/Win)
+        # and on Linux when --add-host=host.docker.internal:host-gateway is set.
+        in_container = Path("/.dockerenv").exists()
+        if (not candidate or _is_docker_bridge(candidate)) and in_container:
+            try:
+                host_ip = socket.getaddrinfo("host.docker.internal", None,
+                                             socket.AF_INET)[0][4][0]
+                if host_ip and not _is_docker_bridge(host_ip):
+                    return host_ip
+            except Exception:
+                pass
+
+        if candidate:
+            return candidate
+
+        # Final fallback: socket trick
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
