@@ -1087,10 +1087,10 @@ async function loadDHCPStatus() {
   try {
     const data = await api('/api/dhcp/status');
     _renderDHCPStatus(data);
-    // If not yet configured, derive sensible defaults from the server IP
-    const settings = (!data.configured && state.serverInfo)
-      ? _mergeWithInferred(data.settings || {}, state.serverInfo.server_host)
-      : (data.settings || {});
+    // Always merge with server-IP-derived defaults: ensures the pool is on
+    // the correct subnet even when loading saved settings that may be stale
+    // or were created on a different host/network.
+    const settings = _mergeWithInferred(data.settings || {}, state.serverInfo?.server_host);
     _populateDHCPSettings(settings);
   } catch (e) {
     document.getElementById('dhcp-status-label').textContent = 'Error loading status';
@@ -1121,34 +1121,52 @@ function _subnetInfo(anchorIp, prefix) {
   };
 }
 
-/** Return sensible pool start/end for a given gateway IP and prefix. */
-function _defaultPool(gatewayIp, prefix) {
-  const info = _subnetInfo(gatewayIp, prefix);
+/**
+ * Return a sensible DHCP pool for the given anchor IP and CIDR prefix.
+ * Pool starts at offset 100 from the network address (leaving room for
+ * static assignments) and covers up to 150 IPs.  Scaled down for small
+ * subnets so the pool always fits within the usable space.
+ */
+function _defaultPool(anchorIp, prefix) {
+  const info = _subnetInfo(anchorIp, prefix);
   if (!info) return null;
   const { netInt, bcastInt, usable } = info;
-  if (usable <= 2) return { start: _intToIp(netInt + 1), end: _intToIp(bcastInt - 1) };
-  // Start pool just after 40% of the range (leaves room for static IPs),
-  // end pool at 95% — clamped so we always leave at least 2 addresses below start
-  const startOff = Math.max(1, Math.min(Math.floor(usable * 0.4) + 1, usable - 2));
-  const endOff   = Math.max(startOff + 1, Math.min(Math.floor(usable * 0.95), usable));
+  if (usable < 2) return null;
+  // /29 and smaller — use all available hosts
+  if (usable <= 6)
+    return { start: _intToIp(netInt + 1), end: _intToIp(bcastInt - 1) };
+  // All other sizes: start at offset 100 (or ~40% for small subnets),
+  // pool up to 150 IPs.
+  const startOff = usable >= 200 ? 100 : Math.max(5, Math.floor(usable * 0.4));
+  const poolSize = Math.min(150, usable - startOff - 1);
   return {
     start: _intToIp(netInt + startOff),
-    end:   _intToIp(netInt + endOff),
+    end:   _intToIp(netInt + startOff + Math.max(1, poolSize)),
   };
 }
 
-/** Update the calculated subnet info panel from current gateway + prefix fields. */
+/**
+ * Best available subnet anchor: gateway IP if valid, else pool start IP.
+ * This lets all subnet calculations work even when no gateway is configured.
+ */
+function _subnetAnchor() {
+  const gw      = document.getElementById('dhcp-gateway')?.value?.trim();
+  const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
+  if (gw && _isValidIp(gw))           return gw;
+  if (startIp && _isValidIp(startIp)) return startIp;
+  return null;
+}
+
+/** Update the calculated subnet info panel. Falls back to pool-start when no gateway is set. */
 function _refreshSubnetPanel() {
-  const gw     = document.getElementById('dhcp-gateway')?.value?.trim();
+  const anchor = _subnetAnchor();
   const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
   const panel  = document.getElementById('dhcp-subnet-info');
+  if (!anchor) { if (panel) panel.style.display = 'none'; return; }
 
-  if (!gw || !_isValidIp(gw)) { if (panel) panel.style.display = 'none'; return; }
-
-  const info = _subnetInfo(gw, prefix);
+  const info = _subnetInfo(anchor, prefix);
   if (!info || !panel) return;
 
-  // Pool size from current range fields
   const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
   const endIp   = document.getElementById('dhcp-range-end')?.value?.trim();
   let poolSize  = '—';
@@ -1170,7 +1188,7 @@ function _validateDHCPRange() {
   const warnEl  = document.getElementById('dhcp-range-warning');
   const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
   const endIp   = document.getElementById('dhcp-range-end')?.value?.trim();
-  const gw      = document.getElementById('dhcp-gateway')?.value?.trim();
+  const anchor  = _subnetAnchor();
   const prefix  = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
   if (!warnEl) return true;
 
@@ -1184,8 +1202,8 @@ function _validateDHCPRange() {
   const startInt = _ipToInt(startIp), endInt = _ipToInt(endIp);
   if (startInt >= endInt) return warn('Start IP must be less than end IP.');
 
-  if (gw && _isValidIp(gw)) {
-    const info = _subnetInfo(gw, prefix);
+  if (anchor) {
+    const info = _subnetInfo(anchor, prefix);
     if (info) {
       if ((startInt & _prefixToMaskInt(prefix)) !== info.netInt)
         return warn(`Start IP ${startIp} is outside subnet ${info.network}/${prefix}.`);
@@ -1200,12 +1218,16 @@ function _validateDHCPRange() {
   return ok();
 }
 
-/** Called when gateway IP or prefix changes — recalculate pool and refresh panel. */
+/**
+ * Called when gateway IP or prefix changes.
+ * Recalculates pool start/end based on the new subnet definition.
+ * Falls back to pool-start as anchor when no gateway is set.
+ */
 function onDHCPNetworkChange() {
-  const gw     = document.getElementById('dhcp-gateway')?.value?.trim();
+  const anchor = _subnetAnchor();
   const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
-  if (gw && _isValidIp(gw)) {
-    const pool = _defaultPool(gw, prefix);
+  if (anchor) {
+    const pool = _defaultPool(anchor, prefix);
     if (pool) {
       document.getElementById('dhcp-range-start').value = pool.start;
       document.getElementById('dhcp-range-end').value   = pool.end;
@@ -1215,34 +1237,60 @@ function onDHCPNetworkChange() {
   _refreshSubnetPanel();
 }
 
-/** Called when pool start/end are edited manually — just re-validate and refresh pool count. */
+/** Called when pool start/end are edited manually — re-validate and refresh pool count. */
 function onDHCPRangeChange() {
   _validateDHCPRange();
   _refreshSubnetPanel();
 }
 
-/** Derive sensible defaults from the known server IP when no config exists yet. */
+/** Derive sensible defaults anchored to the server's own IP and /24 subnet. */
 function _inferFromServerIP(serverIp) {
   if (!serverIp || !_isValidIp(serverIp) || serverIp === '127.0.0.1') return null;
   const p    = serverIp.split('.');
-  const gwIp = `${p[0]}.${p[1]}.${p[2]}.1`;   // assume gateway is .1
+  const gwIp = `${p[0]}.${p[1]}.${p[2]}.1`;  // gateway = .1 of same /24
   const pool = _defaultPool(gwIp, 24);
   if (!pool) return null;
   return { gateway: gwIp, prefix_length: 24, range_start: pool.start, range_end: pool.end, lease_time: '12h' };
 }
 
-/** Merge saved settings with inferred defaults for unconfigured fields. */
+/**
+ * Merge saved settings with server-IP-derived defaults.
+ * Guarantees the DHCP pool is always on the same subnet as the server so
+ * PXE clients can reach the TFTP/HTTP server without routing.
+ *
+ * Rules applied in order:
+ *  1. Gateway:    use saved if valid IP; otherwise use inferred (.1 of server /24).
+ *  2. Pool range: keep saved if it is on the same subnet as the server IP;
+ *                 otherwise reset to inferred (stale defaults from another host).
+ *  3. Everything else (interface, lease_time, dns, server_host): keep saved.
+ */
 function _mergeWithInferred(saved, serverIp) {
   const inferred = _inferFromServerIP(serverIp);
   if (!inferred) return saved;
-  return {
-    ...inferred,   // start from inferred
-    ...saved,      // saved values override
-    // but if saved values are still the old generic defaults, use inferred
-    gateway:       (saved.gateway && saved.gateway !== '192.168.1.1') ? saved.gateway : inferred.gateway,
-    range_start:   saved.range_start || inferred.range_start,
-    range_end:     saved.range_end   || inferred.range_end,
-  };
+
+  // 1. Gateway
+  const gateway = (saved.gateway && _isValidIp(saved.gateway))
+    ? saved.gateway
+    : inferred.gateway;
+
+  // 2. Pool — reset if saved pool is on a different subnet than the server
+  let range_start = saved.range_start;
+  let range_end   = saved.range_end;
+  const prefix    = saved.prefix_length || inferred.prefix_length;
+  if (serverIp && _isValidIp(serverIp) && range_start && _isValidIp(range_start)) {
+    const maskInt   = _prefixToMaskInt(prefix);
+    const serverNet = _ipToInt(serverIp)    & maskInt;
+    const poolNet   = _ipToInt(range_start) & maskInt;
+    if (serverNet !== poolNet) {
+      range_start = inferred.range_start;
+      range_end   = inferred.range_end;
+    }
+  } else if (!range_start) {
+    range_start = inferred.range_start;
+    range_end   = inferred.range_end;
+  }
+
+  return { ...saved, gateway, prefix_length: prefix, range_start, range_end };
 }
 
 function _renderDHCPStatus(data) {
