@@ -1087,11 +1087,39 @@ async function loadDHCPStatus() {
   try {
     const data = await api('/api/dhcp/status');
     _renderDHCPStatus(data);
-    _populateDHCPSettings(data.settings || {});
+    // If not yet configured, derive sensible defaults from the server IP
+    const settings = (!data.configured && state.serverInfo)
+      ? _mergeWithInferred(data.settings || {}, state.serverInfo.server_host)
+      : (data.settings || {});
+    _populateDHCPSettings(settings);
   } catch (e) {
     document.getElementById('dhcp-status-label').textContent = 'Error loading status';
     document.getElementById('dhcp-status-sub').textContent   = e.message;
   }
+}
+
+/** Derive DHCP range and subnet mask from a known server IP (assumes /24). */
+function _inferFromServerIP(serverIp) {
+  if (!serverIp || serverIp === '127.0.0.1') return null;
+  const p = serverIp.split('.');
+  if (p.length !== 4) return null;
+  const base = `${p[0]}.${p[1]}.${p[2]}`;
+  return {
+    dhcp_range:  `${base}.100,${base}.200,12h`,
+    subnet_mask: '255.255.255.0',
+  };
+}
+
+/** Merge saved settings with inferred defaults where fields are still generic. */
+function _mergeWithInferred(saved, serverIp) {
+  const inferred = _inferFromServerIP(serverIp);
+  if (!inferred) return saved;
+  return {
+    ...saved,
+    // Only replace if still at the factory default or empty
+    dhcp_range:  (!saved.dhcp_range  || saved.dhcp_range  === '192.168.1.100,192.168.1.200,12h') ? inferred.dhcp_range  : saved.dhcp_range,
+    subnet_mask: (!saved.subnet_mask || saved.subnet_mask === '255.255.255.0')                    ? inferred.subnet_mask : saved.subnet_mask,
+  };
 }
 
 function _renderDHCPStatus(data) {
@@ -1152,6 +1180,7 @@ function _populateDHCPSettings(s) {
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   setVal('dhcp-interface',   s.interface);
   setVal('dhcp-range',       s.dhcp_range);
+  setVal('dhcp-subnet-mask', s.subnet_mask);
   setVal('dhcp-router',      s.dhcp_router);
   setVal('dhcp-dns',         s.dhcp_dns);
   setVal('dhcp-server-host', s.server_host);
@@ -1159,11 +1188,12 @@ function _populateDHCPSettings(s) {
 
 function _collectDHCPSettings() {
   return {
-    interface:   document.getElementById('dhcp-interface')?.value?.trim()   || 'eth0',
-    dhcp_range:  document.getElementById('dhcp-range')?.value?.trim()        || '192.168.1.100,192.168.1.200,12h',
-    dhcp_router: document.getElementById('dhcp-router')?.value?.trim()       || null,
-    dhcp_dns:    document.getElementById('dhcp-dns')?.value?.trim()          || null,
-    server_host: document.getElementById('dhcp-server-host')?.value?.trim()  || null,
+    interface:   document.getElementById('dhcp-interface')?.value?.trim()    || 'eth0',
+    dhcp_range:  document.getElementById('dhcp-range')?.value?.trim()         || '192.168.1.100,192.168.1.200,12h',
+    subnet_mask: document.getElementById('dhcp-subnet-mask')?.value?.trim()   || '255.255.255.0',
+    dhcp_router: document.getElementById('dhcp-router')?.value?.trim()        || null,
+    dhcp_dns:    document.getElementById('dhcp-dns')?.value?.trim()           || null,
+    server_host: document.getElementById('dhcp-server-host')?.value?.trim()   || null,
   };
 }
 

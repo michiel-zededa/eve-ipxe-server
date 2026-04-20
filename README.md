@@ -132,7 +132,8 @@ DHCP). To activate it, open the **DHCP Server** section in the sidebar and confi
 | Setting | Example | Description |
 |---------|---------|-------------|
 | Network Interface | `eth0` | Host interface to bind for DHCP broadcasts |
-| DHCP Range | `192.168.1.100,192.168.1.200,12h` | IP pool and lease time |
+| DHCP Range | `192.168.1.100,192.168.1.200,12h` | IP pool start, end, and lease time — auto-populated from the server IP |
+| Subnet Mask | `255.255.255.0` | Pushed to clients; auto-calculated from the server IP (assumes /24) |
 | Default Gateway | `192.168.1.1` | Router IP pushed to clients (optional) |
 | DNS Server | `8.8.8.8` | DNS IP pushed to clients (optional) |
 | TFTP / HTTP Server IP | `192.168.1.10` | This server's LAN IP (auto-detected if blank) |

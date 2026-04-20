@@ -21,6 +21,7 @@ CONTAINER_NAME = "eve-ipxe-dnsmasq"
 DEFAULT_SETTINGS: dict = {
     "interface": "eth0",
     "dhcp_range": "192.168.1.100,192.168.1.200,12h",
+    "subnet_mask": "255.255.255.0",
     "dhcp_router": "",
     "dhcp_dns": "",
     "server_host": "",
@@ -60,12 +61,36 @@ def save_settings(settings: dict) -> None:
     logger.info("DHCP settings saved to %s", _config_path())
 
 
+def _build_dhcp_range(dhcp_range: str, subnet_mask: str) -> str:
+    """Insert subnet_mask into a dhcp-range string if not already present.
+
+    dnsmasq format: start,end[,netmask],lease-time
+    We insert the mask between end IP and lease time when a mask is given
+    and not already embedded.
+    """
+    if not subnet_mask:
+        return dhcp_range
+    parts = [p.strip() for p in dhcp_range.split(",")]
+    # Already has 4 parts (start, end, mask, lease) — leave as-is
+    if len(parts) >= 4:
+        return dhcp_range
+    # 3 parts: start, end, lease-time → insert mask before lease
+    if len(parts) == 3:
+        return f"{parts[0]},{parts[1]},{subnet_mask},{parts[2]}"
+    # 2 parts: start, end → append mask (no lease time)
+    if len(parts) == 2:
+        return f"{parts[0]},{parts[1]},{subnet_mask}"
+    return dhcp_range
+
+
 def _write_dnsmasq_conf(settings: dict) -> None:
     """Generate a dnsmasq.conf from settings and write to the config volume."""
     cfg = get_settings()
     server_host = (settings.get("server_host") or "").strip() or cfg.get_server_host()
     interface   = settings.get("interface", "eth0") or "eth0"
     dhcp_range  = settings.get("dhcp_range", "192.168.1.100,192.168.1.200,12h")
+    subnet_mask = (settings.get("subnet_mask") or "").strip()
+    dhcp_range  = _build_dhcp_range(dhcp_range, subnet_mask)
     dhcp_router = (settings.get("dhcp_router") or "").strip()
     dhcp_dns    = (settings.get("dhcp_dns") or "").strip()
     webui_port  = cfg.webui_port

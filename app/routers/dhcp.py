@@ -17,7 +17,8 @@ router = APIRouter(prefix="/api/dhcp", tags=["dhcp"])
 
 class DHCPSettings(BaseModel):
     interface:   str            = Field("eth0",                               description="Host network interface to bind (e.g. eth0, eno1)")
-    dhcp_range:  str            = Field("192.168.1.100,192.168.1.200,12h",   description="DHCP pool range and lease time (dnsmasq format)")
+    dhcp_range:  str            = Field("192.168.1.100,192.168.1.200,12h",   description="DHCP pool: start IP, end IP, lease time")
+    subnet_mask: Optional[str]  = Field("255.255.255.0",                     description="Subnet mask pushed to clients and inserted into dhcp-range")
     dhcp_router: Optional[str]  = Field(None,                                description="Default gateway pushed to clients (optional)")
     dhcp_dns:    Optional[str]  = Field(None,                                description="DNS server pushed to clients (optional)")
     server_host: Optional[str]  = Field(None,                                description="TFTP/HTTP server IP shown to PXE clients (auto-detected if empty)")
@@ -71,6 +72,7 @@ async def update_dhcp_config(settings: DHCPSettings):
     data = {
         "interface":   settings.interface,
         "dhcp_range":  settings.dhcp_range,
+        "subnet_mask": settings.subnet_mask or "255.255.255.0",
         "dhcp_router": settings.dhcp_router or "",
         "dhcp_dns":    settings.dhcp_dns or "",
         "server_host": settings.server_host or "",
@@ -85,6 +87,7 @@ async def apply_dhcp_config(settings: DHCPSettings):
     data = {
         "interface":   settings.interface,
         "dhcp_range":  settings.dhcp_range,
+        "subnet_mask": settings.subnet_mask or "255.255.255.0",
         "dhcp_router": settings.dhcp_router or "",
         "dhcp_dns":    settings.dhcp_dns or "",
         "server_host": settings.server_host or "",
