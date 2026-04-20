@@ -661,14 +661,17 @@ if exists user-class and option user-class = "iPXE" {
 
         <div class="form-group">
           <label class="field-label" for="dhcp-range">DHCP Range</label>
-          <input class="field-input" type="text" id="dhcp-range" placeholder="192.168.1.100,192.168.1.200,12h" />
+          <input class="field-input" type="text" id="dhcp-range" placeholder="192.168.1.100,192.168.1.200,12h"
+                 oninput="_validateDHCPRange()" />
           <div class="field-hint">Start IP, end IP, lease time (e.g. <code>12h</code>)</div>
+          <div id="dhcp-range-warning" style="display:none; color:#f59e0b; font-size:12px; margin-top:4px;"></div>
         </div>
 
         <div class="form-group">
           <label class="field-label" for="dhcp-subnet-mask">Subnet Mask</label>
-          <input class="field-input" type="text" id="dhcp-subnet-mask" placeholder="255.255.255.0" />
-          <div class="field-hint">Pushed to clients and included in the DHCP lease — auto-calculated from the server IP</div>
+          <input class="field-input" type="text" id="dhcp-subnet-mask" placeholder="255.255.255.0"
+                 onchange="onDHCPMaskChange()" />
+          <div class="field-hint">Changing this recalculates the IP range to fit the new subnet</div>
         </div>
 
         <div class="form-group">

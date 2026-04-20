@@ -3,11 +3,12 @@ DHCP server management API — start / stop / configure the dnsmasq container.
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.services import dhcp_manager
 
@@ -22,6 +23,31 @@ class DHCPSettings(BaseModel):
     dhcp_router: Optional[str]  = Field(None,                                description="Default gateway pushed to clients (optional)")
     dhcp_dns:    Optional[str]  = Field(None,                                description="DNS server pushed to clients (optional)")
     server_host: Optional[str]  = Field(None,                                description="TFTP/HTTP server IP shown to PXE clients (auto-detected if empty)")
+
+    @model_validator(mode="after")
+    def validate_range_fits_mask(self) -> "DHCPSettings":
+        mask = (self.subnet_mask or "").strip()
+        if not mask:
+            return self
+        parts = [p.strip() for p in self.dhcp_range.split(",")]
+        if len(parts) < 2:
+            return self
+        start_ip, end_ip = parts[0], parts[1]
+        try:
+            mask_obj  = ipaddress.IPv4Address(mask)
+            start_obj = ipaddress.IPv4Address(start_ip)
+            end_obj   = ipaddress.IPv4Address(end_ip)
+            mask_int  = int(mask_obj)
+            if start_obj > end_obj:
+                raise ValueError(f"Range start {start_ip} must be less than end {end_ip}")
+            if (int(start_obj) & mask_int) != (int(end_obj) & mask_int):
+                raise ValueError(
+                    f"Range start {start_ip} and end {end_ip} are on different subnets "
+                    f"for mask {mask}"
+                )
+        except ipaddress.AddressValueError as e:
+            raise ValueError(f"Invalid IP in range or mask: {e}")
+        return self
 
 
 @router.get("/status")

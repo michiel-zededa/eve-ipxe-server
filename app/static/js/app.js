@@ -1098,28 +1098,137 @@ async function loadDHCPStatus() {
   }
 }
 
-/** Derive DHCP range and subnet mask from a known server IP (assumes /24). */
-function _inferFromServerIP(serverIp) {
-  if (!serverIp || serverIp === '127.0.0.1') return null;
-  const p = serverIp.split('.');
-  if (p.length !== 4) return null;
-  const base = `${p[0]}.${p[1]}.${p[2]}`;
+// ── Subnet utilities ─────────────────────────────────────────────────────────
+
+function _ipToInt(ip) {
+  return ip.split('.').reduce((n, o) => ((n << 8) | parseInt(o, 10)) >>> 0, 0);
+}
+function _intToIp(n) {
+  return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+}
+function _isValidIp(ip) {
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
+    ip.split('.').every(o => parseInt(o, 10) <= 255);
+}
+function _isValidMask(mask) {
+  if (!_isValidIp(mask)) return false;
+  const n = _ipToInt(mask);
+  // Valid masks have contiguous leading 1s: (n & (~n+1)) === 0 only if no holes
+  return n === 0 || ((~n + 1) >>> 0 & n) === 0;
+}
+function _ipInSubnet(ip, refIp, mask) {
+  const m = _ipToInt(mask);
+  return (_ipToInt(ip) & m) === (_ipToInt(refIp) & m);
+}
+
+/** Given a server IP and mask, return sensible start/end pool IPs. */
+function _poolForSubnet(serverIp, mask) {
+  const maskInt    = _ipToInt(mask);
+  const netInt     = _ipToInt(serverIp) & maskInt;
+  const bcastInt   = (netInt | (~maskInt >>> 0)) >>> 0;
+  const usable     = bcastInt - netInt - 1;          // exclude net + broadcast
+
+  // For tiny subnets (≤4 hosts) just use first/last usable
+  if (usable <= 4) {
+    return { start: _intToIp(netInt + 1), end: _intToIp(bcastInt - 1) };
+  }
+  // Use offsets: start at 20% of host space or +100, end at 80% or +200
+  const startOff = Math.min(100, Math.max(1,  Math.floor(usable * 0.2)));
+  const endOff   = Math.min(200, Math.max(2,  Math.floor(usable * 0.8)));
   return {
-    dhcp_range:  `${base}.100,${base}.200,12h`,
-    subnet_mask: '255.255.255.0',
+    start: _intToIp(Math.min(netInt + startOff, bcastInt - 2)),
+    end:   _intToIp(Math.min(netInt + endOff,   bcastInt - 1)),
   };
+}
+
+/** Derive DHCP range and subnet mask from a known server IP + mask. */
+function _inferFromServerIP(serverIp, mask = '255.255.255.0') {
+  if (!serverIp || serverIp === '127.0.0.1') return null;
+  if (!_isValidIp(serverIp) || !_isValidMask(mask)) return null;
+  const { start, end } = _poolForSubnet(serverIp, mask);
+  return { dhcp_range: `${start},${end},12h`, subnet_mask: mask };
 }
 
 /** Merge saved settings with inferred defaults where fields are still generic. */
 function _mergeWithInferred(saved, serverIp) {
-  const inferred = _inferFromServerIP(serverIp);
+  const mask     = (saved.subnet_mask && _isValidMask(saved.subnet_mask))
+                   ? saved.subnet_mask : '255.255.255.0';
+  const inferred = _inferFromServerIP(serverIp, mask);
   if (!inferred) return saved;
   return {
     ...saved,
-    // Only replace if still at the factory default or empty
     dhcp_range:  (!saved.dhcp_range  || saved.dhcp_range  === '192.168.1.100,192.168.1.200,12h') ? inferred.dhcp_range  : saved.dhcp_range,
     subnet_mask: (!saved.subnet_mask || saved.subnet_mask === '255.255.255.0')                    ? inferred.subnet_mask : saved.subnet_mask,
   };
+}
+
+/**
+ * Called when the subnet mask field changes.
+ * Recalculates the range start/end to stay within the new subnet,
+ * keeping the existing lease time.
+ */
+function onDHCPMaskChange() {
+  const maskEl  = document.getElementById('dhcp-subnet-mask');
+  const rangeEl = document.getElementById('dhcp-range');
+  const mask    = maskEl?.value?.trim();
+  if (!mask || !_isValidMask(mask)) return;
+
+  const serverIp = state.serverInfo?.server_host;
+  if (!serverIp || !_isValidIp(serverIp)) return;
+
+  // Extract existing lease time from the range field (keep it)
+  const parts     = (rangeEl?.value || '').split(',').map(s => s.trim());
+  const leaseTime = parts.length >= 3 ? parts[parts.length - 1] : '12h';
+
+  const { start, end } = _poolForSubnet(serverIp, mask);
+  rangeEl.value = `${start},${end},${leaseTime}`;
+  _validateDHCPRange();
+}
+
+/**
+ * Validate that range start and end are both within the subnet defined by
+ * the mask and server IP. Shows/clears a warning on the range field.
+ */
+function _validateDHCPRange() {
+  const rangeEl = document.getElementById('dhcp-range');
+  const maskEl  = document.getElementById('dhcp-subnet-mask');
+  const warnEl  = document.getElementById('dhcp-range-warning');
+  if (!rangeEl || !maskEl || !warnEl) return true;
+
+  const parts = rangeEl.value.split(',').map(s => s.trim());
+  const mask  = maskEl.value.trim();
+  const serverIp = state.serverInfo?.server_host;
+
+  const startIp = parts[0];
+  const endIp   = parts[1];
+
+  if (!startIp || !endIp || !_isValidIp(startIp) || !_isValidIp(endIp) ||
+      !mask || !_isValidMask(mask) || !serverIp) {
+    warnEl.style.display = 'none';
+    return true;
+  }
+
+  const startOk = _ipInSubnet(startIp, serverIp, mask);
+  const endOk   = _ipInSubnet(endIp,   serverIp, mask);
+
+  if (!startOk || !endOk) {
+    const maskInt  = _ipToInt(mask);
+    const network  = _intToIp(_ipToInt(serverIp) & maskInt);
+    const bcast    = _intToIp((_ipToInt(serverIp) & maskInt) | (~maskInt >>> 0));
+    warnEl.textContent  = `⚠ ${!startOk ? 'Start' : 'End'} IP is outside the subnet ` +
+                          `${network} – ${bcast}. Use the mask field to recalculate.`;
+    warnEl.style.display = '';
+    return false;
+  }
+
+  if (_ipToInt(startIp) >= _ipToInt(endIp)) {
+    warnEl.textContent   = '⚠ Start IP must be less than end IP.';
+    warnEl.style.display = '';
+    return false;
+  }
+
+  warnEl.style.display = 'none';
+  return true;
 }
 
 function _renderDHCPStatus(data) {
@@ -1231,6 +1340,7 @@ async function dhcpStop() {
 }
 
 async function dhcpSaveSettings() {
+  if (!_validateDHCPRange()) { toast('Fix the IP range before saving', 'error'); return; }
   try {
     await api('/api/dhcp/config', 'PUT', _collectDHCPSettings());
     toast('Settings saved', 'success');
@@ -1240,6 +1350,7 @@ async function dhcpSaveSettings() {
 }
 
 async function dhcpApplyRestart() {
+  if (!_validateDHCPRange()) { toast('Fix the IP range before applying', 'error'); return; }
   try {
     const res = await api('/api/dhcp/apply', 'POST', _collectDHCPSettings());
     toast(res.message || 'Applied', 'success');
