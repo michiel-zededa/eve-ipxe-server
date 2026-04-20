@@ -49,17 +49,14 @@ This stack provides a fully self-contained PXE/iPXE boot environment that:
 git clone https://github.com/michiel-zededa/eve-ipxe-server
 cd eve-ipxe-server
 
-# 1. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set SERVER_HOST to this machine's LAN IP:
-#   SERVER_HOST=192.168.1.10
+# 1. Start the stack — SERVER_HOST is auto-detected and written to .env
+./server.sh start
 
-# 2. Start the stack
-./server.sh start          # or: docker compose up -d
-
-# 3. Open the wizard in your browser
+# 2. Open the wizard in your browser
 open http://localhost:8080
 ```
+
+> **Optional:** copy `.env.example` to `.env` to override specific settings (ports, GitHub token, log level). `SERVER_HOST` is automatically detected from the host's routing table and written to `.env` on first start — you only need to set it manually if auto-detection picks the wrong interface. It can also be updated at any time from the **Boot Instructions** page in the UI.
 
 The included `server.sh` script manages the stack:
 
@@ -311,7 +308,7 @@ All state survives container restarts via named Docker volumes:
 | Volume | Contents |
 |--------|----------|
 | `eve-ipxe-artifacts` | Downloaded EVE installer tarballs (extracted) |
-| `eve-ipxe-config` | SQLite database (`eve-ipxe.db`), GRUB config patches |
+| `eve-ipxe-config` | SQLite database (`eve-ipxe.db`), GRUB config patches, `dhcp-settings.json`, `dnsmasq.conf`, `server-settings.json` |
 | `eve-ipxe-tftp` | TFTP root: iPXE binaries, `boot.ipxe` |
 
 To reset all state:
@@ -431,9 +428,6 @@ See `.env.example` for the full list. Key variables:
 - The `ipxe-arm64.efi` binary must be present in the TFTP root — check the Artifact Cache view
 - Verify your DHCP server sends `filename "ipxe-arm64.efi"` for arch=11 clients
 
-**Controller URL rejected with "must start with https://"**
-- A common paste issue is `https:/host` (one slash instead of two) — the wizard auto-corrects this silently, but double-check the URL if errors persist
-
 ---
 
 ## Project Structure
@@ -449,22 +443,25 @@ eve-ipxe-server/
 │   └── nginx.conf              # Artifact HTTP server config
 ├── dnsmasq/
 │   ├── Dockerfile
-│   └── entrypoint.sh           # Auto-generates dnsmasq.conf from env
+│   └── entrypoint.sh           # Starts dnsmasq with web-UI config, or idles until configured
 └── app/
     ├── main.py                 # FastAPI app + startup logic
-    ├── config.py               # Settings (pydantic-settings)
+    ├── config.py               # Settings (pydantic-settings + runtime overrides)
     ├── models.py               # ORM + Pydantic schemas
     ├── database.py             # Async SQLite
     ├── routers/
     │   ├── releases.py         # GitHub API proxy
     │   ├── configuration.py    # Boot config CRUD
     │   ├── artifacts.py        # Download mgmt + SSE progress
-    │   └── ipxe.py             # iPXE script serving
+    │   ├── ipxe.py             # iPXE script serving
+    │   ├── dhcp.py             # DHCP server management API
+    │   └── server_settings.py  # Server host IP update API
     ├── services/
     │   ├── github_client.py    # GitHub releases API client
     │   ├── artifact_manager.py # Download, extract, grub.cfg patch
     │   ├── tftp_server.py      # Embedded tftpy TFTP server
-    │   └── ipxe_generator.py   # iPXE script generation (grub-chain + direct)
+    │   ├── ipxe_generator.py   # iPXE script generation (grub-chain + direct)
+    │   └── dhcp_manager.py     # dnsmasq container control + config generation
     ├── templates/
     │   ├── boot_grub_chain.ipxe.j2   # v12+ UEFI grub-chain boot script
     │   ├── boot_direct.ipxe.j2       # pre-v12 direct kernel boot script
