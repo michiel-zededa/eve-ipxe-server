@@ -127,22 +127,24 @@ The server auto-detects which mode applies based on what's inside the downloaded
 ### Option A — Bundled dnsmasq (recommended for lab environments)
 
 The dnsmasq container starts automatically with the stack in **idle mode** (not listening for
-DHCP). To activate it, open the **DHCP Server** section in the sidebar and configure:
+DHCP). To activate it, open the **DHCP Server** section in the sidebar:
+
+1. **Select a network interface** from the dropdown — the server detects all physical host NICs
+   automatically (gateway, subnet mask, usable host count, and TFTP server IP are shown
+   read-only in the Network Details panel beneath the dropdown).
+2. **Adjust the DHCP pool range** if needed — it is pre-filled to a sensible default for the
+   selected interface's subnet (roughly the upper half, up to 150 IPs).
 
 | Setting | Example | Description |
 |---------|---------|-------------|
-| Network Interface | `eth0` | Host interface to bind for DHCP broadcasts |
-| Gateway IP | `192.168.1.1` | Router IP — also anchors subnet calculation |
-| Prefix Length | `/24` | CIDR prefix (dropdown /8–/30); auto-fills pool start/end |
-| Pool Start | `192.168.1.101` | First IP in the DHCP pool (auto-calculated from gateway + prefix) |
-| Pool End | `192.168.1.240` | Last IP in the DHCP pool (auto-calculated) |
+| Network Interface | `eth0` | Host NIC to bind; auto-detected from the host (dropdown) |
+| Pool Start | `192.168.1.100` | First assignable IP (auto-calculated, adjustable) |
+| Pool End | `192.168.1.250` | Last assignable IP (auto-calculated, adjustable) |
 | Lease Time | `12h` | Lease duration (e.g. `1h`, `12h`, `24h`, `7d`) |
-| DNS Server | `8.8.8.8` | DNS IP pushed to clients (optional) |
-| TFTP / HTTP Server IP | `192.168.1.10` | This server's LAN IP (auto-detected if blank) |
 
-The calculated subnet info panel (mask, network, broadcast, usable hosts, pool size) updates
-live as you type. Pool start/end are auto-calculated from 40–95% of the usable address space
-but can be adjusted manually.
+All other parameters — gateway, subnet mask, DNS, and TFTP server IP — are derived automatically
+from the selected interface and cannot be edited directly. This guarantees PXE clients are always
+on the same subnet as the TFTP server.
 
 Click **↺ Apply & Restart** to write the config and restart dnsmasq with it. The status badge
 changes from **Idle** (amber) to **Active** (green). Settings are persisted in the config
@@ -383,6 +385,7 @@ Key endpoints:
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/dhcp/interfaces` | Detected host NICs with IP, prefix, and gateway |
 | `GET` | `/api/dhcp/status` | Container state + current settings |
 | `POST` | `/api/dhcp/start` | Start the dnsmasq container |
 | `POST` | `/api/dhcp/stop` | Stop the dnsmasq container |
