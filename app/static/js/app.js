@@ -1100,135 +1100,149 @@ async function loadDHCPStatus() {
 
 // ── Subnet utilities ─────────────────────────────────────────────────────────
 
-function _ipToInt(ip) {
-  return ip.split('.').reduce((n, o) => ((n << 8) | parseInt(o, 10)) >>> 0, 0);
-}
-function _intToIp(n) {
-  return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
-}
-function _isValidIp(ip) {
-  return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
-    ip.split('.').every(o => parseInt(o, 10) <= 255);
-}
-function _isValidMask(mask) {
-  if (!_isValidIp(mask)) return false;
-  const n = _ipToInt(mask);
-  // Valid masks have contiguous leading 1s: (n & (~n+1)) === 0 only if no holes
-  return n === 0 || ((~n + 1) >>> 0 & n) === 0;
-}
-function _ipInSubnet(ip, refIp, mask) {
-  const m = _ipToInt(mask);
-  return (_ipToInt(ip) & m) === (_ipToInt(refIp) & m);
-}
+const _ipToInt = ip => ip.split('.').reduce((n, o) => ((n << 8) | parseInt(o, 10)) >>> 0, 0);
+const _intToIp = n  => [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.');
+const _isValidIp = ip => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && ip.split('.').every(o => +o <= 255);
+const _prefixToMask = p => { const b=(0xFFFFFFFF<<(32-p))>>>0; return _intToIp(b); };
+const _prefixToMaskInt = p => (0xFFFFFFFF<<(32-p))>>>0;
 
-/** Given a server IP and mask, return sensible start/end pool IPs. */
-function _poolForSubnet(serverIp, mask) {
-  const maskInt    = _ipToInt(mask);
-  const netInt     = _ipToInt(serverIp) & maskInt;
-  const bcastInt   = (netInt | (~maskInt >>> 0)) >>> 0;
-  const usable     = bcastInt - netInt - 1;          // exclude net + broadcast
-
-  // For tiny subnets (≤4 hosts) just use first/last usable
-  if (usable <= 4) {
-    return { start: _intToIp(netInt + 1), end: _intToIp(bcastInt - 1) };
-  }
-  // Use offsets: start at 20% of host space or +100, end at 80% or +200
-  const startOff = Math.min(100, Math.max(1,  Math.floor(usable * 0.2)));
-  const endOff   = Math.min(200, Math.max(2,  Math.floor(usable * 0.8)));
+/** Full subnet info for a given anchor IP (gateway) and CIDR prefix. */
+function _subnetInfo(anchorIp, prefix) {
+  if (!_isValidIp(anchorIp) || prefix < 1 || prefix > 30) return null;
+  const maskInt   = _prefixToMaskInt(prefix);
+  const netInt    = _ipToInt(anchorIp) & maskInt;
+  const bcastInt  = (netInt | (~maskInt >>> 0)) >>> 0;
+  const usable    = Math.max(0, bcastInt - netInt - 1);
   return {
-    start: _intToIp(Math.min(netInt + startOff, bcastInt - 2)),
-    end:   _intToIp(Math.min(netInt + endOff,   bcastInt - 1)),
+    mask:      _intToIp(maskInt),
+    network:   _intToIp(netInt),
+    broadcast: _intToIp(bcastInt),
+    netInt, bcastInt, usable,
   };
 }
 
-/** Derive DHCP range and subnet mask from a known server IP + mask. */
-function _inferFromServerIP(serverIp, mask = '255.255.255.0') {
-  if (!serverIp || serverIp === '127.0.0.1') return null;
-  if (!_isValidIp(serverIp) || !_isValidMask(mask)) return null;
-  const { start, end } = _poolForSubnet(serverIp, mask);
-  return { dhcp_range: `${start},${end},12h`, subnet_mask: mask };
+/** Return sensible pool start/end for a given gateway IP and prefix. */
+function _defaultPool(gatewayIp, prefix) {
+  const info = _subnetInfo(gatewayIp, prefix);
+  if (!info) return null;
+  const { netInt, bcastInt, usable } = info;
+  if (usable <= 2) return { start: _intToIp(netInt + 1), end: _intToIp(bcastInt - 1) };
+  // Start pool just after 40% of the range (leaves room for static IPs),
+  // end pool at 95% — clamped so we always leave at least 2 addresses below start
+  const startOff = Math.max(1, Math.min(Math.floor(usable * 0.4) + 1, usable - 2));
+  const endOff   = Math.max(startOff + 1, Math.min(Math.floor(usable * 0.95), usable));
+  return {
+    start: _intToIp(netInt + startOff),
+    end:   _intToIp(netInt + endOff),
+  };
 }
 
-/** Merge saved settings with inferred defaults where fields are still generic. */
+/** Update the calculated subnet info panel from current gateway + prefix fields. */
+function _refreshSubnetPanel() {
+  const gw     = document.getElementById('dhcp-gateway')?.value?.trim();
+  const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
+  const panel  = document.getElementById('dhcp-subnet-info');
+
+  if (!gw || !_isValidIp(gw)) { if (panel) panel.style.display = 'none'; return; }
+
+  const info = _subnetInfo(gw, prefix);
+  if (!info || !panel) return;
+
+  // Pool size from current range fields
+  const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
+  const endIp   = document.getElementById('dhcp-range-end')?.value?.trim();
+  let poolSize  = '—';
+  if (startIp && endIp && _isValidIp(startIp) && _isValidIp(endIp)) {
+    const diff = _ipToInt(endIp) - _ipToInt(startIp) + 1;
+    poolSize = diff > 0 ? diff.toLocaleString() : '⚠ invalid';
+  }
+
+  document.getElementById('dhcp-calc-mask').textContent      = info.mask;
+  document.getElementById('dhcp-calc-network').textContent   = `${info.network}/${prefix}`;
+  document.getElementById('dhcp-calc-broadcast').textContent = info.broadcast;
+  document.getElementById('dhcp-calc-usable').textContent    = info.usable.toLocaleString();
+  document.getElementById('dhcp-calc-pool').textContent      = poolSize;
+  panel.style.display = '';
+}
+
+/** Validate range start/end are inside the current subnet. Returns true if OK. */
+function _validateDHCPRange() {
+  const warnEl  = document.getElementById('dhcp-range-warning');
+  const startIp = document.getElementById('dhcp-range-start')?.value?.trim();
+  const endIp   = document.getElementById('dhcp-range-end')?.value?.trim();
+  const gw      = document.getElementById('dhcp-gateway')?.value?.trim();
+  const prefix  = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
+  if (!warnEl) return true;
+
+  const warn = msg => { warnEl.textContent = '⚠ ' + msg; warnEl.style.display = ''; return false; };
+  const ok   = ()  => { warnEl.style.display = 'none'; return true; };
+
+  if (!startIp || !endIp) return ok();
+  if (!_isValidIp(startIp)) return warn('Invalid start IP.');
+  if (!_isValidIp(endIp))   return warn('Invalid end IP.');
+
+  const startInt = _ipToInt(startIp), endInt = _ipToInt(endIp);
+  if (startInt >= endInt) return warn('Start IP must be less than end IP.');
+
+  if (gw && _isValidIp(gw)) {
+    const info = _subnetInfo(gw, prefix);
+    if (info) {
+      if ((startInt & _prefixToMaskInt(prefix)) !== info.netInt)
+        return warn(`Start IP ${startIp} is outside subnet ${info.network}/${prefix}.`);
+      if ((endInt   & _prefixToMaskInt(prefix)) !== info.netInt)
+        return warn(`End IP ${endIp} is outside subnet ${info.network}/${prefix}.`);
+      if (startInt <= info.netInt)
+        return warn(`Start IP must be greater than the network address (${info.network}).`);
+      if (endInt >= info.bcastInt)
+        return warn(`End IP must be less than the broadcast address (${info.broadcast}).`);
+    }
+  }
+  return ok();
+}
+
+/** Called when gateway IP or prefix changes — recalculate pool and refresh panel. */
+function onDHCPNetworkChange() {
+  const gw     = document.getElementById('dhcp-gateway')?.value?.trim();
+  const prefix = parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10);
+  if (gw && _isValidIp(gw)) {
+    const pool = _defaultPool(gw, prefix);
+    if (pool) {
+      document.getElementById('dhcp-range-start').value = pool.start;
+      document.getElementById('dhcp-range-end').value   = pool.end;
+    }
+  }
+  _validateDHCPRange();
+  _refreshSubnetPanel();
+}
+
+/** Called when pool start/end are edited manually — just re-validate and refresh pool count. */
+function onDHCPRangeChange() {
+  _validateDHCPRange();
+  _refreshSubnetPanel();
+}
+
+/** Derive sensible defaults from the known server IP when no config exists yet. */
+function _inferFromServerIP(serverIp) {
+  if (!serverIp || !_isValidIp(serverIp) || serverIp === '127.0.0.1') return null;
+  const p    = serverIp.split('.');
+  const gwIp = `${p[0]}.${p[1]}.${p[2]}.1`;   // assume gateway is .1
+  const pool = _defaultPool(gwIp, 24);
+  if (!pool) return null;
+  return { gateway: gwIp, prefix_length: 24, range_start: pool.start, range_end: pool.end, lease_time: '12h' };
+}
+
+/** Merge saved settings with inferred defaults for unconfigured fields. */
 function _mergeWithInferred(saved, serverIp) {
-  const mask     = (saved.subnet_mask && _isValidMask(saved.subnet_mask))
-                   ? saved.subnet_mask : '255.255.255.0';
-  const inferred = _inferFromServerIP(serverIp, mask);
+  const inferred = _inferFromServerIP(serverIp);
   if (!inferred) return saved;
   return {
-    ...saved,
-    dhcp_range:  (!saved.dhcp_range  || saved.dhcp_range  === '192.168.1.100,192.168.1.200,12h') ? inferred.dhcp_range  : saved.dhcp_range,
-    subnet_mask: (!saved.subnet_mask || saved.subnet_mask === '255.255.255.0')                    ? inferred.subnet_mask : saved.subnet_mask,
+    ...inferred,   // start from inferred
+    ...saved,      // saved values override
+    // but if saved values are still the old generic defaults, use inferred
+    gateway:       (saved.gateway && saved.gateway !== '192.168.1.1') ? saved.gateway : inferred.gateway,
+    range_start:   saved.range_start || inferred.range_start,
+    range_end:     saved.range_end   || inferred.range_end,
   };
-}
-
-/**
- * Called when the subnet mask field changes.
- * Recalculates the range start/end to stay within the new subnet,
- * keeping the existing lease time.
- */
-function onDHCPMaskChange() {
-  const maskEl  = document.getElementById('dhcp-subnet-mask');
-  const rangeEl = document.getElementById('dhcp-range');
-  const mask    = maskEl?.value?.trim();
-  if (!mask || !_isValidMask(mask)) return;
-
-  const serverIp = state.serverInfo?.server_host;
-  if (!serverIp || !_isValidIp(serverIp)) return;
-
-  // Extract existing lease time from the range field (keep it)
-  const parts     = (rangeEl?.value || '').split(',').map(s => s.trim());
-  const leaseTime = parts.length >= 3 ? parts[parts.length - 1] : '12h';
-
-  const { start, end } = _poolForSubnet(serverIp, mask);
-  rangeEl.value = `${start},${end},${leaseTime}`;
-  _validateDHCPRange();
-}
-
-/**
- * Validate that range start and end are both within the subnet defined by
- * the mask and server IP. Shows/clears a warning on the range field.
- */
-function _validateDHCPRange() {
-  const rangeEl = document.getElementById('dhcp-range');
-  const maskEl  = document.getElementById('dhcp-subnet-mask');
-  const warnEl  = document.getElementById('dhcp-range-warning');
-  if (!rangeEl || !maskEl || !warnEl) return true;
-
-  const parts = rangeEl.value.split(',').map(s => s.trim());
-  const mask  = maskEl.value.trim();
-  const serverIp = state.serverInfo?.server_host;
-
-  const startIp = parts[0];
-  const endIp   = parts[1];
-
-  if (!startIp || !endIp || !_isValidIp(startIp) || !_isValidIp(endIp) ||
-      !mask || !_isValidMask(mask) || !serverIp) {
-    warnEl.style.display = 'none';
-    return true;
-  }
-
-  const startOk = _ipInSubnet(startIp, serverIp, mask);
-  const endOk   = _ipInSubnet(endIp,   serverIp, mask);
-
-  if (!startOk || !endOk) {
-    const maskInt  = _ipToInt(mask);
-    const network  = _intToIp(_ipToInt(serverIp) & maskInt);
-    const bcast    = _intToIp((_ipToInt(serverIp) & maskInt) | (~maskInt >>> 0));
-    warnEl.textContent  = `⚠ ${!startOk ? 'Start' : 'End'} IP is outside the subnet ` +
-                          `${network} – ${bcast}. Use the mask field to recalculate.`;
-    warnEl.style.display = '';
-    return false;
-  }
-
-  if (_ipToInt(startIp) >= _ipToInt(endIp)) {
-    warnEl.textContent   = '⚠ Start IP must be less than end IP.';
-    warnEl.style.display = '';
-    return false;
-  }
-
-  warnEl.style.display = 'none';
-  return true;
 }
 
 function _renderDHCPStatus(data) {
@@ -1288,21 +1302,29 @@ function _renderDHCPStatus(data) {
 function _populateDHCPSettings(s) {
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   setVal('dhcp-interface',   s.interface);
-  setVal('dhcp-range',       s.dhcp_range);
-  setVal('dhcp-subnet-mask', s.subnet_mask);
-  setVal('dhcp-router',      s.dhcp_router);
+  setVal('dhcp-gateway',     s.gateway);
+  // Prefix dropdown — value must be a string for the <select>
+  const prefixEl = document.getElementById('dhcp-prefix');
+  if (prefixEl) prefixEl.value = String(s.prefix_length || 24);
+  setVal('dhcp-range-start', s.range_start);
+  setVal('dhcp-range-end',   s.range_end);
+  setVal('dhcp-lease-time',  s.lease_time);
   setVal('dhcp-dns',         s.dhcp_dns);
   setVal('dhcp-server-host', s.server_host);
+  // Refresh the calculated subnet panel to match the loaded values
+  _refreshSubnetPanel();
 }
 
 function _collectDHCPSettings() {
   return {
-    interface:   document.getElementById('dhcp-interface')?.value?.trim()    || 'eth0',
-    dhcp_range:  document.getElementById('dhcp-range')?.value?.trim()         || '192.168.1.100,192.168.1.200,12h',
-    subnet_mask: document.getElementById('dhcp-subnet-mask')?.value?.trim()   || '255.255.255.0',
-    dhcp_router: document.getElementById('dhcp-router')?.value?.trim()        || null,
-    dhcp_dns:    document.getElementById('dhcp-dns')?.value?.trim()           || null,
-    server_host: document.getElementById('dhcp-server-host')?.value?.trim()   || null,
+    interface:     document.getElementById('dhcp-interface')?.value?.trim()    || 'eth0',
+    gateway:       document.getElementById('dhcp-gateway')?.value?.trim()      || null,
+    prefix_length: parseInt(document.getElementById('dhcp-prefix')?.value || '24', 10),
+    range_start:   document.getElementById('dhcp-range-start')?.value?.trim()  || '192.168.1.100',
+    range_end:     document.getElementById('dhcp-range-end')?.value?.trim()    || '192.168.1.200',
+    lease_time:    document.getElementById('dhcp-lease-time')?.value?.trim()   || '12h',
+    dhcp_dns:      document.getElementById('dhcp-dns')?.value?.trim()          || null,
+    server_host:   document.getElementById('dhcp-server-host')?.value?.trim()  || null,
   };
 }
 
